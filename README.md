@@ -2,7 +2,7 @@
 
 Simulador interactivo para la enseñanza de la teoría de la producción y los costos en cursos de Microeconomía Intermedia. Permite explorar, a partir de distintas especificaciones de la función de producción $f(K,L)$, la minimización de costos sujeta a un nivel de producción $Q$ y la derivación de las familias de curvas de costo de corto y de largo plazo, incluyendo la propiedad de envolvente.
 
-`**[▶ Abrir el simulador](https://fcontiggiani.github.io/costos-cp-lp/costos_produccion.html)**`
+**[▶ Abrir el simulador](https://fcontiggiani.github.io/costos-cp-lp/costos_produccion.html)**
 
 ![Captura del simulador: paneles de costo de corto plazo, mapa de isocuantas/isocosto, y familia de curvas medias/marginales con envolvente de largo plazo](screenshot.png)
 
