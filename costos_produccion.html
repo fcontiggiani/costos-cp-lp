@@ -1,0 +1,1554 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simulador de Costos de Producción — Corto y Largo Plazo</title>
+<script>
+  window.MathJax = {
+    tex: {
+      inlineMath: [['$', '$'], ['\\(', '\\)']],
+      displayMath: [['$$', '$$'], ['\\[', '\\]']]
+    },
+    svg: { fontCache: 'global' }
+  };
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js"></script>
+<style>
+  :root {
+    --bg: #fafaf8;
+    --panel-bg: #ffffff;
+    --border: #d8d5cd;
+    --border-light: #ebe9e3;
+    --text: #2a2823;
+    --text-muted: #6b6759;
+    --accent: #1f5f6b;
+    --accent-soft: #7fa8b0;
+    --accent2: #a8562f;
+    --accent2-soft: #d9a184;
+    --accent3: #6b5b95;
+    --accent4: #8a9a5b;
+    --grid: #e6e3da;
+    --highlight-bg: #f2efe6;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06);
+    --mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+    --serif: 'Source Serif 4', Georgia, serif;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  [data-theme="dark"] {
+    --bg: #1a1a17;
+    --panel-bg: #232320;
+    --border: #3d3b34;
+    --border-light: #2d2b26;
+    --text: #e8e5da;
+    --text-muted: #a39d8c;
+    --accent: #6fb8c4;
+    --accent-soft: #3d6a72;
+    --accent2: #d9825a;
+    --accent2-soft: #7a4530;
+    --accent3: #a897c9;
+    --accent4: #b0c17a;
+    --grid: #34322c;
+    --highlight-bg: #2a2924;
+    --shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .app {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 18px 20px 40px;
+  }
+  header.top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 14px;
+  }
+  header.top h1 {
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 4px 0;
+    letter-spacing: -0.01em;
+  }
+  header.top p.subtitle {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 12.5px;
+    max-width: 640px;
+  }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    font-family: var(--sans);
+  }
+  .theme-toggle:hover { background: var(--highlight-bg); }
+
+  /* ---- Controles superiores ---- */
+  .controls-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 12px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow);
+  }
+  .control-group { display: flex; flex-direction: column; gap: 4px; }
+  .control-group label {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+  }
+  .control-group label .val { color: var(--text); font-weight: 600; }
+  .control-group select {
+    font-family: var(--sans);
+    font-size: 13px;
+    padding: 5px 6px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    color: var(--text);
+  }
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    background: var(--grid);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--panel-bg);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--panel-bg);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+
+  .form-params {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    margin-top: 8px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-light);
+  }
+  .form-params .control-group { min-width: 130px; flex: 1; }
+
+  /* ---- Panels grid ---- */
+  .panels {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 980px) {
+    .panels { grid-template-columns: 1fr; }
+  }
+  .panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px 10px;
+    box-shadow: var(--shadow);
+  }
+  .panel.full { grid-column: 1 / -1; }
+  .panel h2 {
+    font-family: var(--serif);
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 2px 0;
+  }
+  .panel .panel-desc {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin: 0 0 8px 0;
+  }
+  svg text { font-family: var(--sans); }
+  .axis-label { font-size: 11px; fill: var(--text-muted); }
+  .tick-label { font-size: 9.5px; fill: var(--text-muted); }
+  .grid-line { stroke: var(--grid); stroke-width: 1; }
+  .curve-label {
+    font-size: 10.5px;
+    font-weight: 600;
+  }
+
+  /* ---- Values panel ---- */
+  .values-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-light);
+  }
+  .value-box {
+    background: var(--highlight-bg);
+    border-radius: 6px;
+    padding: 6px 9px;
+  }
+  .value-box .k { font-size: 10px; color: var(--text-muted); font-family: var(--mono); }
+  .value-box .v { font-size: 14px; font-weight: 600; font-family: var(--mono); }
+
+  /* ---- Legend / checkbox toggles ---- */
+  .curve-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .curve-toggle {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    cursor: pointer;
+    user-select: none;
+    padding: 3px 8px 3px 6px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+  }
+  .curve-toggle input { cursor: pointer; accent-color: var(--accent); }
+  .curve-toggle .swatch {
+    width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0;
+  }
+
+  /* ---- Snapshot / K-set list for envelope panel ---- */
+  .snapshot-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .btn {
+    font-family: var(--sans);
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .btn:hover { background: var(--highlight-bg); }
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .btn.primary:hover { opacity: 0.9; }
+  .btn.active {
+    background: var(--accent2);
+    border-color: var(--accent2);
+    color: #fff;
+  }
+  .btn.small { font-size: 11px; padding: 4px 9px; }
+  .k-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .k-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 3px 5px 3px 8px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--highlight-bg);
+  }
+  .k-chip button {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-muted); font-size: 12px; line-height: 1;
+    padding: 0 2px;
+  }
+  .k-chip button:hover { color: var(--accent2); }
+
+  .derivation {
+    margin-top: 14px;
+    border-top: 1px solid var(--border-light);
+    padding-top: 10px;
+  }
+  .derivation summary {
+    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--accent);
+    font-family: var(--sans);
+  }
+  .derivation-body {
+    margin-top: 10px;
+    font-size: 12.5px;
+    line-height: 1.7;
+  }
+  .derivation-body .eq-block {
+    background: var(--highlight-bg);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 6px 0;
+    overflow-x: auto;
+  }
+
+  footer.note {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: center;
+    margin-top: 20px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-light);
+  }
+</style>
+</head>
+<body data-theme="light">
+<div class="app">
+
+  <header class="top">
+    <div>
+      <h1>Costos de producción: minimización de costos, corto y largo plazo</h1>
+      <p class="subtitle">Elección de la forma funcional de producción $f(K,L)$, minimización de costos sujeta a $Q$, y derivación de las familias de curvas de costo de corto y largo plazo (envolvente).</p>
+    </div>
+    <button class="theme-toggle" id="themeToggle">🌙 Oscuro</button>
+  </header>
+
+  <!-- ============== BARRA DE CONTROLES GLOBALES ============== -->
+  <div class="controls-bar" id="controlsBar">
+    <div class="control-group">
+      <label>Forma funcional de producción</label>
+      <select id="formSelect"></select>
+    </div>
+    <div class="control-group">
+      <label>Salario <span class="mono">w</span> <span class="val" id="wVal">4.0</span></label>
+      <input type="range" id="wSlider" min="0.5" max="12" step="0.1" value="4">
+    </div>
+    <div class="control-group">
+      <label>Tasa de interés <span class="mono">r</span> <span class="val" id="rVal">3.0</span></label>
+      <input type="range" id="rSlider" min="0.5" max="12" step="0.1" value="3">
+    </div>
+    <div class="control-group">
+      <label>Capital fijo de corto plazo $\bar K$ <span class="val" id="KVal">10.0</span></label>
+      <input type="range" id="KSlider" min="1" max="30" step="0.5" value="10">
+    </div>
+    <div class="control-group">
+      <label>Cantidad de referencia $Q_0$ <span class="val" id="Q0Val">20.0</span></label>
+      <input type="range" id="Q0Slider" min="1" max="60" step="0.5" value="20">
+    </div>
+    <div class="control-group" id="formParamsToggle" style="justify-content:flex-end;">
+      <label style="visibility:hidden;">.</label>
+      <button class="btn small" id="toggleParamsBtn">Parámetros de $f(K,L)$ ▾</button>
+    </div>
+  </div>
+  <div class="controls-bar" id="formParamsBar" style="display:none;"></div>
+
+  <!-- ============== PANEL SUPERIOR: aislado (definición de f) ============== -->
+  <div class="panel full" id="panelDefinition">
+    <h2 id="formTitle">Forma funcional</h2>
+    <p class="panel-desc" id="formEquation"></p>
+  </div>
+
+  <!-- ============== FILA 1: Costos de CP  |  Isocuantas/Isocostos ============== -->
+  <div class="panels">
+    <div class="panel" id="panelCP">
+      <h2>Costo total, fijo y variable de corto plazo</h2>
+      <p class="panel-desc">A $\bar K$ constante, curvas $CT(Q)$, $CF$ y $CV(Q)$ en función de la cantidad producida.</p>
+      <svg id="svgCP" viewBox="0 0 480 340" style="width:100%; height:auto;"></svg>
+      <div class="values-strip" id="valuesCP"></div>
+    </div>
+
+    <div class="panel" id="panelIso">
+      <h2>Mapa de isocuantas, isocostos y sendero de expansión</h2>
+      <p class="panel-desc">Isocuantas de $f(K,L)$, recta de isocosto de largo plazo tangente a $Q_0$, y sendero de expansión de corto y largo plazo.</p>
+      <svg id="svgIso" viewBox="0 0 480 340" style="width:100%; height:auto;"></svg>
+      <div class="values-strip" id="valuesIso"></div>
+    </div>
+  </div>
+
+  <!-- ============== FILA 2: Envolvente de curvas medias/marginales ============== -->
+  <div class="panels">
+    <div class="panel full" id="panelEnvelope">
+      <h2>Curvas de costo medio y marginal — familia de corto plazo y envolvente de largo plazo</h2>
+      <p class="panel-desc">Fijá $\bar K$ con el slider superior y presioná «Agregar curva» para capturar el conjunto $(CMe, CVMe, CFMe, CMg)$ correspondiente. Repetí con otros valores de $\bar K$ para visualizar cómo la envolvente de largo plazo resulta tangente a cada familia de corto plazo. <em>Nota:</em> con Cobb-Douglas y $\alpha+\beta=1$ (rendimientos constantes a escala, parámetros por defecto), $CMeLP$ es horizontal por construcción teórica —no es un error de cálculo—; modificá $\alpha,\beta$ para observar economías o deseconomías de escala.</p>
+
+      <div class="snapshot-bar">
+        <button class="btn primary" id="addKSnapshot">+ Agregar curva para $\bar K$ actual</button>
+        <button class="btn" id="clearKSnapshots">Limpiar curvas</button>
+        <button class="btn" id="toggleEnvelope">Mostrar envolvente de largo plazo</button>
+        <div class="k-chips" id="kChips"></div>
+      </div>
+
+      <div class="curve-toggles" id="curveToggles"></div>
+
+      <svg id="svgEnvelope" viewBox="0 0 900 380" style="width:100%; height:auto;"></svg>
+      <div class="values-strip" id="valuesEnvelope"></div>
+    </div>
+  </div>
+
+  <div class="panel full">
+    <details class="derivation">
+      <summary>Ver derivación analítica de la minimización de costos</summary>
+      <div class="derivation-body" id="derivationBody"></div>
+    </details>
+  </div>
+
+  <footer class="note">
+    Simulador autocontenido (Canvas/SVG nativo, sin librerías de gráficos externas). Renderizado matemático vía MathJax 3.
+  </footer>
+
+</div>
+<script>
+// ============================================================
+// SIMULADOR DE COSTOS DE PRODUCCIÓN — motor + render
+// Motor matemático verificado en engine.js (10/10 tests OK)
+// ============================================================
+
+(function () {
+"use strict";
+
+// ---------------------------------------------------------------
+// 1. FORMAS FUNCIONALES DE PRODUCCIÓN
+// ---------------------------------------------------------------
+const FORMS = {
+  cobb_douglas: {
+    label: "Cobb-Douglas",
+    eq: "Q = A\\,K^{\\alpha}L^{\\beta}",
+    paramDefs: [
+      { key: "A", label: "A (escala)", min: 0.5, max: 3, step: 0.1, def: 1.5 },
+      { key: "alpha", label: "\\alpha (K)", min: 0.1, max: 0.9, step: 0.05, def: 0.5 },
+      { key: "beta", label: "\\beta (L)", min: 0.1, max: 0.9, step: 0.05, def: 0.5 }
+    ],
+    Q: (K, L, p) => p.A * Math.pow(Math.max(K, 1e-6), p.alpha) * Math.pow(Math.max(L, 1e-6), p.beta),
+    Lstar_from_KQ: (K, Q, p) => Math.pow(Q / (p.A * Math.pow(Math.max(K, 1e-6), p.alpha)), 1 / p.beta),
+    longRunDemand: (Q, w, r, p) => {
+      const ratio = (p.alpha / p.beta) * (w / r);
+      const L = Math.pow(Q / (p.A * Math.pow(ratio, p.alpha)), 1 / (p.alpha + p.beta));
+      const K = ratio * L;
+      return { K, L };
+    },
+    isRSA: false // returns to scale ajustables vía alpha+beta
+  },
+
+  leontief: {
+    label: "Leontief (complementos perfectos)",
+    eq: "Q = \\min\\left\\{\\dfrac{K}{a},\\ \\dfrac{L}{b}\\right\\}",
+    paramDefs: [
+      { key: "a", label: "a (K por unidad Q)", min: 0.2, max: 3, step: 0.1, def: 1 },
+      { key: "b", label: "b (L por unidad Q)", min: 0.2, max: 3, step: 0.1, def: 1 }
+    ],
+    Q: (K, L, p) => Math.min(K / p.a, L / p.b),
+    Lstar_from_KQ: (K, Q, p) => (K / p.a >= Q - 1e-9) ? p.b * Q : NaN,
+    longRunDemand: (Q, w, r, p) => ({ K: p.a * Q, L: p.b * Q })
+  },
+
+  sustitutos: {
+    label: "Sustitutos perfectos",
+    eq: "Q = aK + bL",
+    paramDefs: [
+      { key: "a", label: "a (product. K)", min: 0.2, max: 3, step: 0.1, def: 1 },
+      { key: "b", label: "b (product. L)", min: 0.2, max: 3, step: 0.1, def: 1 }
+    ],
+    Q: (K, L, p) => p.a * K + p.b * L,
+    Lstar_from_KQ: (K, Q, p) => Math.max(0, (Q - p.a * K) / p.b),
+    longRunDemand: (Q, w, r, p) => {
+      const costOnlyK = r / p.a;
+      const costOnlyL = w / p.b;
+      if (costOnlyK < costOnlyL) return { K: Q / p.a, L: 0 };
+      if (costOnlyL < costOnlyK) return { K: 0, L: Q / p.b };
+      return { K: Q / p.a, L: 0 };
+    }
+  },
+
+  ces: {
+    label: "CES",
+    eq: "Q = A\\left[\\alpha K^{\\rho} + (1-\\alpha)L^{\\rho}\\right]^{1/\\rho}",
+    paramDefs: [
+      { key: "A", label: "A (escala)", min: 0.5, max: 3, step: 0.1, def: 1.3 },
+      { key: "alphaShare", label: "\\alpha (part. K)", min: 0.1, max: 0.9, step: 0.05, def: 0.5 },
+      { key: "rho", label: "\\rho (sustituc.)", min: -3, max: 0.9, step: 0.05, def: 0.5 }
+    ],
+    Q: (K, L, p) => {
+      const r = Math.abs(p.rho) < 1e-4 ? 1e-4 * Math.sign(p.rho || 1) : p.rho;
+      const inner = p.alphaShare * Math.pow(Math.max(K, 1e-6), r) + (1 - p.alphaShare) * Math.pow(Math.max(L, 1e-6), r);
+      return p.A * Math.pow(Math.max(inner, 1e-9), 1 / r);
+    },
+    Lstar_from_KQ: (K, Q, p) => {
+      const r = Math.abs(p.rho) < 1e-4 ? 1e-4 * Math.sign(p.rho || 1) : p.rho;
+      const target = Math.pow(Q / p.A, r);
+      const kTerm = p.alphaShare * Math.pow(Math.max(K, 1e-6), r);
+      const lTerm = (target - kTerm) / (1 - p.alphaShare);
+      if (lTerm <= 0) return NaN;
+      return Math.pow(lTerm, 1 / r);
+    },
+    longRunDemand: (Q, w, r_, p) => {
+      const rho = Math.abs(p.rho) < 1e-4 ? 1e-4 * Math.sign(p.rho || 1) : p.rho;
+      const sigma = 1 / (1 - rho);
+      const ratio = Math.pow(((1 - p.alphaShare) / p.alphaShare) * (w / r_), sigma);
+      const bracket = p.alphaShare * Math.pow(ratio, rho) + (1 - p.alphaShare);
+      const L = Math.pow(Math.pow(Q / p.A, rho) / bracket, 1 / rho);
+      const K = ratio * L;
+      return { K, L };
+    }
+  },
+
+  cubica: {
+    label: "Cúbica (rendimientos variables en L)",
+    eq: "Q = A\\,K^{\\alpha}\\left(aL + bL^{2} - cL^{3}\\right)",
+    paramDefs: [
+      { key: "A", label: "A (escala)", min: 0.3, max: 2, step: 0.1, def: 1 },
+      { key: "alpha", label: "\\alpha (K)", min: 0.1, max: 0.6, step: 0.05, def: 0.3 },
+      { key: "a", label: "a", min: 0.3, max: 3, step: 0.1, def: 1 },
+      { key: "b", label: "b", min: 0.05, max: 0.6, step: 0.01, def: 0.3 },
+      { key: "c", label: "c", min: 0.002, max: 0.03, step: 0.001, def: 0.01 }
+    ],
+    Q: (K, L, p) => {
+      const Lp = Math.max(L, 0);
+      const g = p.a * Lp + p.b * Lp * Lp - p.c * Lp * Lp * Lp;
+      return p.A * Math.pow(Math.max(K, 1e-6), p.alpha) * Math.max(g, 0);
+    },
+    Lstar_from_KQ: (K, Q, p) => {
+      const target = Q / (p.A * Math.pow(Math.max(K, 1e-6), p.alpha));
+      const g = (L) => p.a * L + p.b * L * L - p.c * L * L * L;
+      const disc = 4 * p.b * p.b + 12 * p.c * p.a;
+      const Lpeak = (2 * p.b + Math.sqrt(disc)) / (6 * p.c);
+      const gmax = g(Lpeak);
+      if (target > gmax) return NaN;
+      let lo = 0, hi = Lpeak;
+      for (let i = 0; i < 60; i++) {
+        const mid = (lo + hi) / 2;
+        if (g(mid) < target) lo = mid; else hi = mid;
+      }
+      return (lo + hi) / 2;
+    },
+    longRunDemand: (Q, w, r, p) => {
+      const g = (L) => p.a * L + p.b * L * L - p.c * L * L * L;
+      const disc = 4 * p.b * p.b + 12 * p.c * p.a;
+      const Lpeak = (2 * p.b + Math.sqrt(disc)) / (6 * p.c);
+      const gmax = g(Lpeak);
+      const LstarFn = (K) => {
+        const target = Q / (p.A * Math.pow(Math.max(K, 1e-6), p.alpha));
+        if (target > gmax) return NaN;
+        let lo = 0, hi = Lpeak;
+        for (let i = 0; i < 60; i++) {
+          const mid = (lo + hi) / 2;
+          if (g(mid) < target) lo = mid; else hi = mid;
+        }
+        return (lo + hi) / 2;
+      };
+      let bestK = 1, bestCost = Infinity, bestL = 0;
+      // búsqueda gruesa + refinamiento
+      for (let K = 0.2; K <= 60; K += 0.2) {
+        const L = LstarFn(K);
+        if (isNaN(L)) continue;
+        const cost = w * L + r * K;
+        if (cost < bestCost) { bestCost = cost; bestK = K; bestL = L; }
+      }
+      for (let K = Math.max(0.05, bestK - 0.3); K <= bestK + 0.3; K += 0.01) {
+        const L = LstarFn(K);
+        if (isNaN(L)) continue;
+        const cost = w * L + r * K;
+        if (cost < bestCost) { bestCost = cost; bestK = K; bestL = L; }
+      }
+      return { K: bestK, L: bestL };
+    }
+  }
+};
+
+// ---------------------------------------------------------------
+// 2. COSTOS DE CORTO Y LARGO PLAZO
+// ---------------------------------------------------------------
+function shortRunCostAtQ(formKey, Q, Kbar, w, r, params) {
+  const f = FORMS[formKey];
+  const L = f.Lstar_from_KQ(Kbar, Q, params);
+  if (isNaN(L) || L < 0 || Q <= 0) return null;
+  const CF = r * Kbar;
+  const CV = w * L;
+  const CT = CF + CV;
+  return { L, CF, CV, CT, CMe: CT / Q, CVMe: CV / Q, CFMe: CF / Q };
+}
+
+function marginalCost(formKey, Q, Kbar, w, r, params, h) {
+  h = h || Math.max(0.01, Q * 0.01);
+  const c1 = shortRunCostAtQ(formKey, Q + h, Kbar, w, r, params);
+  const c0 = shortRunCostAtQ(formKey, Math.max(Q - h, 1e-4), Kbar, w, r, params);
+  if (!c1 || !c0) return null;
+  return (c1.CT - c0.CT) / (c1 === c0 ? 1 : ((Q + h) - Math.max(Q - h, 1e-4)));
+}
+
+function longRunCost(formKey, Q, w, r, params) {
+  const f = FORMS[formKey];
+  const { K, L } = f.longRunDemand(Q, w, r, params);
+  return { K, L, CT: w * L + r * K, CMe: (w * L + r * K) / Q };
+}
+
+// ---------------------------------------------------------------
+// 3. UTILIDADES SVG
+// ---------------------------------------------------------------
+const SVGNS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+
+function makeScale(domainMin, domainMax, rangeMin, rangeMax) {
+  return function (v) {
+    const t = (v - domainMin) / (domainMax - domainMin || 1);
+    return rangeMin + t * (rangeMax - rangeMin);
+  };
+}
+
+function drawAxes(svg, opts) {
+  // opts: {x0,y0,x1,y1, xDomain:[min,max], yDomain:[min,max], xLabel, yLabel, xTicks, yTicks}
+  const { x0, y0, x1, y1, xDomain, yDomain, xLabel, yLabel } = opts;
+  const sx = makeScale(xDomain[0], xDomain[1], x0, x1);
+  const sy = makeScale(yDomain[0], yDomain[1], y0, y1); // y0 = bottom (larger px), y1 = top
+
+  const nXTicks = opts.xTicks || 5;
+  const nYTicks = opts.yTicks || 5;
+
+  // grid + ticks X
+  for (let i = 0; i <= nXTicks; i++) {
+    const v = xDomain[0] + (i / nXTicks) * (xDomain[1] - xDomain[0]);
+    const px = sx(v);
+    el("line", { x1: px, y1: y0, x2: px, y2: y1, class: "grid-line" }, svg);
+    el("text", { x: px, y: y0 + 14, class: "tick-label", "text-anchor": "middle" }, svg).textContent = fmtTick(v);
+  }
+  // grid + ticks Y
+  for (let i = 0; i <= nYTicks; i++) {
+    const v = yDomain[0] + (i / nYTicks) * (yDomain[1] - yDomain[0]);
+    const py = sy(v);
+    el("line", { x1: x0, y1: py, x2: x1, y2: py, class: "grid-line" }, svg);
+    el("text", { x: x0 - 6, y: py + 3, class: "tick-label", "text-anchor": "end" }, svg).textContent = fmtTick(v);
+  }
+  // ejes
+  el("line", { x1: x0, y1: y0, x2: x1, y2: y0, stroke: "var(--text-muted)", "stroke-width": 1.2 }, svg);
+  el("line", { x1: x0, y1: y0, x2: x0, y2: y1, stroke: "var(--text-muted)", "stroke-width": 1.2 }, svg);
+  // labels
+  el("text", { x: (x0 + x1) / 2, y: y0 + 30, class: "axis-label", "text-anchor": "middle" }, svg).textContent = xLabel;
+  const yl = el("text", {
+    x: 12, y: (y0 + y1) / 2, class: "axis-label", "text-anchor": "middle",
+    transform: `rotate(-90 12 ${(y0 + y1) / 2})`
+  }, svg);
+  yl.textContent = yLabel;
+
+  return { sx, sy };
+}
+
+function fmtTick(v) {
+  if (Math.abs(v) < 0.005) return "0";
+  if (Math.abs(v) >= 100) return v.toFixed(0);
+  if (Number.isInteger(v)) return v.toFixed(0);
+  return v.toFixed(1);
+}
+
+function pathFromPoints(pts) {
+  return pts.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(2) + "," + p[1].toFixed(2)).join(" ");
+}
+
+function drawLabelWithHalo(svg, x, y, text, opts) {
+  opts = opts || {};
+  const fs = opts.fontSize || 10.5;
+  const halo = el("text", {
+    x, y, "text-anchor": opts.anchor || "start",
+    "font-size": fs, "font-weight": opts.weight || 600,
+    stroke: "var(--panel-bg)", "stroke-width": 3, "paint-order": "stroke",
+    fill: opts.color || "var(--text)"
+  }, svg);
+  halo.textContent = text;
+  return halo;
+}
+
+// exponer
+window.CostosEngine = {
+  FORMS, shortRunCostAtQ, marginalCost, longRunCost,
+  el, clear, makeScale, drawAxes, pathFromPoints, drawLabelWithHalo, fmtTick, SVGNS
+};
+
+})();
+
+// ============================================================
+// 4. ESTADO GLOBAL Y CONTROLADOR DE LA APLICACIÓN
+// ============================================================
+(function () {
+"use strict";
+const E = window.CostosEngine;
+const FORMS = E.FORMS;
+
+const COLORS = {
+  CT: "#1f5f6b",      // accent
+  CF: "#a8562f",      // accent2
+  CV: "#6b5b95",      // accent3
+  CMe: "#1f5f6b",
+  CVMe: "#6b5b95",
+  CFMe: "#a8562f",
+  CMg: "#8a9a5b",      // accent4
+  LR: "#c0392b",       // envolvente LP, un rojo distintivo
+  isoq: "#7fa8b0",
+  isocost: "#a8562f",
+  pathSR: "#8a9a5b",
+  pathLR: "#c0392b"
+};
+const KSNAP_PALETTE = ["#1f5f6b", "#a8562f", "#6b5b95", "#8a9a5b", "#c0392b", "#3d7a8c", "#b3803f"];
+
+const state = {
+  formKey: "cobb_douglas",
+  w: 4, r: 3, Kbar: 10, Q0: 20,
+  params: {}, // por forma, valores actuales (clonados de paramDefs.def)
+  kSnapshots: [], // [{Kbar, color}]
+  showEnvelope: false,
+  curveVisibility: { CMe: true, CVMe: true, CFMe: true, CMg: true },
+  theme: "light"
+};
+
+// inicializar params por defecto para cada forma
+for (const key in FORMS) {
+  state.params[key] = {};
+  FORMS[key].paramDefs.forEach(pd => { state.params[key][pd.key] = pd.def; });
+}
+
+function currentParams() { return state.params[state.formKey]; }
+function currentForm() { return FORMS[state.formKey]; }
+
+// ---------------------------------------------------------------
+// 4.1 Construcción de la barra de controles
+// ---------------------------------------------------------------
+// Valores por defecto de (K̄, Q0) razonables para cada forma funcional, de modo que
+// al cambiar de forma el estado inicial sea siempre alcanzable (evita el caso "K̄ no
+// alcanza Q₀" apenas se selecciona una forma con escala muy distinta de Cobb-Douglas).
+const DEFAULT_STATE_BY_FORM = {
+  cobb_douglas: { Kbar: 10, Q0: 20 },
+  leontief: { Kbar: 25, Q0: 20 },
+  sustitutos: { Kbar: 15, Q0: 20 },
+  ces: { Kbar: 10, Q0: 20 },
+  cubica: { Kbar: 10, Q0: 20 }
+};
+
+function buildFormSelector() {
+  const sel = document.getElementById("formSelect");
+  E.clear(sel);
+  for (const key in FORMS) {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = FORMS[key].label;
+    sel.appendChild(opt);
+  }
+  sel.value = state.formKey;
+  sel.addEventListener("change", () => {
+    state.formKey = sel.value;
+    state.kSnapshots = []; // las curvas capturadas eran de la forma anterior
+    const def = DEFAULT_STATE_BY_FORM[state.formKey];
+    if (def) {
+      state.Kbar = def.Kbar;
+      state.Q0 = def.Q0;
+      document.getElementById("KSlider").value = def.Kbar;
+      document.getElementById("KVal").textContent = def.Kbar.toFixed(1);
+      document.getElementById("Q0Slider").value = def.Q0;
+      document.getElementById("Q0Val").textContent = def.Q0.toFixed(1);
+    }
+    buildFormParamsBar();
+    renderAll();
+  });
+}
+
+function buildFormParamsBar() {
+  const bar = document.getElementById("formParamsBar");
+  E.clear(bar);
+  const f = currentForm();
+  f.paramDefs.forEach(pd => {
+    const group = document.createElement("div");
+    group.className = "control-group";
+    const label = document.createElement("label");
+    const span = document.createElement("span");
+    span.className = "val";
+    span.id = `param_${pd.key}_val`;
+    span.textContent = state.params[state.formKey][pd.key].toFixed(2);
+    label.innerHTML = `\\(${pd.label}\\)&nbsp;`;
+    label.appendChild(span);
+    const input = document.createElement("input");
+    input.type = "range";
+    input.min = pd.min; input.max = pd.max; input.step = pd.step;
+    input.value = state.params[state.formKey][pd.key];
+    input.addEventListener("input", () => {
+      state.params[state.formKey][pd.key] = parseFloat(input.value);
+      span.textContent = parseFloat(input.value).toFixed(2);
+      state.kSnapshots = []; // parámetros de f cambiaron, invalida capturas
+      renderAll();
+    });
+    group.appendChild(label);
+    group.appendChild(input);
+    bar.appendChild(group);
+  });
+  if (window.MathJax && window.MathJax.typesetPromise) {
+    window.MathJax.typesetPromise([bar]);
+  }
+}
+
+function wireGlobalControls() {
+  const wSlider = document.getElementById("wSlider");
+  const rSlider = document.getElementById("rSlider");
+  const KSlider = document.getElementById("KSlider");
+  const Q0Slider = document.getElementById("Q0Slider");
+
+  wSlider.addEventListener("input", () => {
+    state.w = parseFloat(wSlider.value);
+    document.getElementById("wVal").textContent = state.w.toFixed(1);
+    renderAll();
+  });
+  rSlider.addEventListener("input", () => {
+    state.r = parseFloat(rSlider.value);
+    document.getElementById("rVal").textContent = state.r.toFixed(1);
+    renderAll();
+  });
+  KSlider.addEventListener("input", () => {
+    state.Kbar = parseFloat(KSlider.value);
+    document.getElementById("KVal").textContent = state.Kbar.toFixed(1);
+    renderAll();
+  });
+  Q0Slider.addEventListener("input", () => {
+    state.Q0 = parseFloat(Q0Slider.value);
+    document.getElementById("Q0Val").textContent = state.Q0.toFixed(1);
+    renderAll();
+  });
+
+  document.getElementById("toggleParamsBtn").addEventListener("click", () => {
+    const bar = document.getElementById("formParamsBar");
+    const btn = document.getElementById("toggleParamsBtn");
+    const willShow = bar.style.display === "none";
+    bar.style.display = willShow ? "flex" : "none";
+    btn.textContent = willShow ? "Parámetros de $f(K,L)$ ▴" : "Parámetros de $f(K,L)$ ▾";
+  });
+
+  document.getElementById("themeToggle").addEventListener("click", () => {
+    state.theme = state.theme === "light" ? "dark" : "light";
+    document.body.setAttribute("data-theme", state.theme);
+    document.getElementById("themeToggle").textContent = state.theme === "light" ? "🌙 Oscuro" : "☀️ Claro";
+    try { localStorage.setItem("costos_theme", state.theme); } catch (e) {}
+    renderAll();
+  });
+
+  document.getElementById("addKSnapshot").addEventListener("click", () => {
+    addKSnapshot(state.Kbar);
+  });
+  document.getElementById("clearKSnapshots").addEventListener("click", () => {
+    state.kSnapshots = [];
+    window.__renderEnvelopePanel();
+  });
+  document.getElementById("toggleEnvelope").addEventListener("click", () => {
+    state.showEnvelope = !state.showEnvelope;
+    const btn = document.getElementById("toggleEnvelope");
+    btn.classList.toggle("active", state.showEnvelope);
+    btn.textContent = state.showEnvelope ? "Ocultar envolvente de largo plazo" : "Mostrar envolvente de largo plazo";
+    window.__renderEnvelopePanel();
+  });
+
+  // tema guardado
+  try {
+    const saved = localStorage.getItem("costos_theme");
+    if (saved === "dark") {
+      state.theme = "dark";
+      document.body.setAttribute("data-theme", "dark");
+      document.getElementById("themeToggle").textContent = "☀️ Claro";
+    }
+  } catch (e) {}
+}
+
+function buildCurveToggles() {
+  const wrap = document.getElementById("curveToggles");
+  E.clear(wrap);
+  const defs = [
+    { key: "CMe", label: "CMe (costo medio total)", color: COLORS.CMe },
+    { key: "CVMe", label: "CVMe (costo variable medio)", color: COLORS.CVMe },
+    { key: "CFMe", label: "CFMe (costo fijo medio)", color: COLORS.CFMe },
+    { key: "CMg", label: "CMg (costo marginal)", color: COLORS.CMg }
+  ];
+  defs.forEach(d => {
+    const lbl = document.createElement("label");
+    lbl.className = "curve-toggle";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = state.curveVisibility[d.key];
+    cb.addEventListener("change", () => {
+      state.curveVisibility[d.key] = cb.checked;
+      window.__renderEnvelopePanel();
+    });
+    const sw = document.createElement("span");
+    sw.className = "swatch";
+    sw.style.background = d.color;
+    lbl.appendChild(cb);
+    lbl.appendChild(sw);
+    lbl.appendChild(document.createTextNode(d.label));
+    wrap.appendChild(lbl);
+  });
+}
+
+function addKSnapshot(Kbar) {
+  // evitar duplicados exactos
+  if (state.kSnapshots.some(s => Math.abs(s.Kbar - Kbar) < 1e-6)) return;
+  const color = KSNAP_PALETTE[state.kSnapshots.length % KSNAP_PALETTE.length];
+  state.kSnapshots.push({ Kbar, color });
+  renderKChips();
+  window.__renderEnvelopePanel();
+}
+function removeKSnapshot(idx) {
+  state.kSnapshots.splice(idx, 1);
+  renderKChips();
+  window.__renderEnvelopePanel();
+}
+function renderKChips() {
+  const wrap = document.getElementById("kChips");
+  E.clear(wrap);
+  state.kSnapshots.forEach((s, idx) => {
+    const chip = document.createElement("span");
+    chip.className = "k-chip";
+    chip.style.borderColor = s.color;
+    const dot = document.createElement("span");
+    dot.style.width = "8px"; dot.style.height = "8px"; dot.style.borderRadius = "50%";
+    dot.style.background = s.color; dot.style.display = "inline-block";
+    chip.appendChild(dot);
+    chip.appendChild(document.createTextNode(` K̄=${s.Kbar.toFixed(1)}`));
+    const btn = document.createElement("button");
+    btn.textContent = "✕";
+    btn.addEventListener("click", () => removeKSnapshot(idx));
+    chip.appendChild(btn);
+    wrap.appendChild(chip);
+  });
+}
+
+window.__CostosApp = { state, addKSnapshot, removeKSnapshot };
+
+window.__initApp = function () {
+  buildFormSelector();
+  buildFormParamsBar();
+  wireGlobalControls();
+  buildCurveToggles();
+  renderKChips();
+  window.renderAll();
+};
+
+})();
+
+// ============================================================
+// 5. PANEL 1 — Costo total, fijo y variable de corto plazo
+// ============================================================
+(function () {
+"use strict";
+const E = window.CostosEngine;
+const FORMS = E.FORMS;
+
+function renderCPPanel() {
+  const app = window.__CostosApp;
+  const st = app.state;
+  const svg = document.getElementById("svgCP");
+  E.clear(svg);
+  const f = FORMS[st.formKey];
+  const params = st.params[st.formKey];
+
+  const W = 480, H = 340;
+  const margin = { l: 46, r: 14, t: 14, b: 34 };
+  const x0 = margin.l, x1 = W - margin.r, y0 = H - margin.b, y1 = margin.t;
+
+  // Determinar rango de Q recorriendo hasta donde el Kbar actual puede producir
+  const QMAX_GLOBAL = 70;
+  const points = [];
+  let QcapReached = QMAX_GLOBAL;
+  const N = 90;
+  for (let i = 1; i <= N; i++) {
+    const Q = (i / N) * QMAX_GLOBAL;
+    const c = E.shortRunCostAtQ(st.formKey, Q, st.Kbar, st.w, st.r, params);
+    if (!c) { QcapReached = Q; break; }
+    points.push({ Q, ...c });
+  }
+  if (points.length < 2) {
+    const msg = E.el("text", { x: W / 2, y: H / 2, "text-anchor": "middle", class: "axis-label" }, svg);
+    msg.textContent = "K̄ insuficiente para producir con este w, r";
+    return;
+  }
+  const QMAXplot = points[points.length - 1].Q;
+  const CTmax = Math.max(...points.map(p => p.CT));
+  const yMax = CTmax * 1.12;
+
+  const { sx, sy } = E.drawAxes(svg, {
+    x0, y0, x1, y1,
+    xDomain: [0, QMAXplot], yDomain: [0, yMax],
+    xLabel: "Q (cantidad producida)", yLabel: "Costo ($)"
+  });
+
+  // CF: horizontal
+  const CF = st.r * st.Kbar;
+  E.el("line", { x1: x0, y1: sy(CF), x2: x1, y2: sy(CF), stroke: COLORSget("CF"), "stroke-width": 2, "stroke-dasharray": "5,3" }, svg);
+  E.drawLabelWithHalo(svg, x1 - 60, sy(CF) - 6, "CF", { color: COLORSget("CF") });
+
+  // CV
+  const cvPts = points.map(p => [sx(p.Q), sy(p.CV)]);
+  E.el("path", { d: E.pathFromPoints(cvPts), fill: "none", stroke: COLORSget("CV"), "stroke-width": 2.2 }, svg);
+  const lastCV = cvPts[cvPts.length - 1];
+  E.drawLabelWithHalo(svg, lastCV[0] - 34, lastCV[1] - 8, "CV", { color: COLORSget("CV") });
+
+  // CT
+  const ctPts = points.map(p => [sx(p.Q), sy(p.CT)]);
+  E.el("path", { d: E.pathFromPoints(ctPts), fill: "none", stroke: COLORSget("CT"), "stroke-width": 2.4 }, svg);
+  const lastCT = ctPts[ctPts.length - 1];
+  E.drawLabelWithHalo(svg, lastCT[0] - 34, lastCT[1] - 8, "CT", { color: COLORSget("CT") });
+
+  // marcar Q0 si está dentro de rango
+  if (st.Q0 <= QMAXplot) {
+    const c0 = E.shortRunCostAtQ(st.formKey, st.Q0, st.Kbar, st.w, st.r, params);
+    if (c0) {
+      const px = sx(st.Q0);
+      E.el("line", { x1: px, y1: y0, x2: px, y2: y1, stroke: "var(--text-muted)", "stroke-width": 1, "stroke-dasharray": "2,3" }, svg);
+      [["CT", c0.CT, COLORSget("CT")], ["CV", c0.CV, COLORSget("CV")]].forEach(([name, val, color]) => {
+        const py = sy(val);
+        E.el("circle", { cx: px, cy: py, r: 3.2, fill: color }, svg);
+      });
+      E.drawLabelWithHalo(svg, px + 4, y0 - 4, "Q₀", { fontSize: 10, color: "var(--text-muted)" });
+    }
+  }
+
+  // valores
+  const valuesBox = document.getElementById("valuesCP");
+  E.clear(valuesBox);
+  const c0 = (st.Q0 <= QMAXplot) ? E.shortRunCostAtQ(st.formKey, st.Q0, st.Kbar, st.w, st.r, params) : null;
+  const rows = [
+    ["CF", CF.toFixed(2)],
+    ["CV(Q₀)", c0 ? c0.CV.toFixed(2) : "—"],
+    ["CT(Q₀)", c0 ? c0.CT.toFixed(2) : "—"],
+    ["L*(Q₀)", c0 ? c0.L.toFixed(2) : "—"]
+  ];
+  rows.forEach(([k, v]) => {
+    const box = document.createElement("div");
+    box.className = "value-box";
+    box.innerHTML = `<div class="k">${k}</div><div class="v">${v}</div>`;
+    valuesBox.appendChild(box);
+  });
+}
+
+function COLORSget(key) {
+  const map = { CT: "#1f5f6b", CF: "#a8562f", CV: "#6b5b95" };
+  return map[key];
+}
+
+window.__renderCPPanel = renderCPPanel;
+})();
+
+// ============================================================
+// 6. PANEL 2 — Isocuantas, isocostos y sendero de expansión
+// ============================================================
+(function () {
+"use strict";
+const E = window.CostosEngine;
+const FORMS = E.FORMS;
+
+function computeIsoquantPath(formKey, Qlevel, params, Kmax, Lmax, steps) {
+  const f = FORMS[formKey];
+  const pts = [];
+  steps = steps || 120;
+  if (formKey === "leontief") {
+    // Forma de "L": tramo horizontal desde el borde hasta el vértice (kv,lv), luego
+    // tramo vertical desde el vértice hasta el techo del panel.
+    const p = params;
+    const kv = p.a * Qlevel, lv = p.b * Qlevel;
+    return [[Kmax, lv], [kv, lv], [kv, Lmax]];
+  }
+  if (formKey === "sustitutos") {
+    const p = params;
+    // a*K + b*L = Q  => L = (Q - aK)/b
+    const K1 = 0, L1 = Qlevel / p.b;
+    const K2 = Qlevel / p.a, L2 = 0;
+    return [[K1, L1], [K2, L2]];
+  }
+  // General: para cada K en grilla, resolver L tal que Q(K,L)=Qlevel.
+  // Se genera con densidad mayor cerca de K pequeño, donde la isocuanta es más
+  // empinada (L crece rápido), para evitar el efecto de "escalón" en el trazo.
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const K = Kmax * t * t; // grilla cuadrática: más densa cerca de K=0
+    if (K < 1e-3) continue;
+    const L = f.Lstar_from_KQ(K, Qlevel, params);
+    if (!isNaN(L) && L >= 0) pts.push([K, L]);
+  }
+  return pts;
+}
+
+// Recorta una polilínea (lista de puntos [K,L]) contra el techo L<=Lmax,
+// interpolando linealmente el punto de cruce en vez de descartar el segmento
+// completo, para que la curva termine justo en el borde del panel sin "escalón".
+function clipPolylineToLmax(pts, Lmax) {
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const [K, L] = pts[i];
+    const inside = L <= Lmax;
+    if (inside) {
+      out.push([K, L]);
+    } else if (out.length && i > 0) {
+      const [K0, L0] = pts[i - 1];
+      const [K1, L1] = pts[i];
+      if (L0 <= Lmax && L1 > Lmax) {
+        const t = (Lmax - L0) / (L1 - L0);
+        out.push([K0 + t * (K1 - K0), Lmax]);
+      }
+      break; // isocuanta es monótona decreciente: una vez que sale, no vuelve a entrar
+    }
+  }
+  return out;
+}
+
+function renderIsoPanel() {
+  const app = window.__CostosApp;
+  const st = app.state;
+  const svg = document.getElementById("svgIso");
+  E.clear(svg);
+  const f = FORMS[st.formKey];
+  const params = st.params[st.formKey];
+
+  const W = 480, H = 340;
+  const margin = { l: 46, r: 14, t: 14, b: 34 };
+  const x0 = margin.l, x1 = W - margin.r, y0 = H - margin.b, y1 = margin.t;
+
+  // Determinar K,L de largo plazo para Q0
+  const lr = E.longRunCost(st.formKey, st.Q0, st.w, st.r, params);
+  // Para Leontief/sustitutos, el nivel superior de isocuanta (1.55·Q0) define el punto
+  // más lejano que debe quedar visible; se amplía el dominio en función de ese nivel
+  // en lugar de solo 2.2·(K,L en Q0), para que las tres isocuantas quepan sin recortes.
+  const topLevelFactor = 1.65;
+  const Kmax = Math.max(lr.K * 2.2 * topLevelFactor / 1.55, st.Kbar * 1.6, 15);
+  const Lmax = Math.max(lr.L * 2.2 * topLevelFactor / 1.55, 15);
+
+  const { sx, sy } = E.drawAxes(svg, {
+    x0, y0, x1, y1,
+    xDomain: [0, Lmax], yDomain: [0, Kmax],
+    xLabel: "L (trabajo)", yLabel: "K (capital)"
+  });
+  // Proyección a píxeles con K en el eje de ordenadas y L en el de abscisas:
+  // toda la geometría del panel se calcula en (K,L) como antes; sólo se invierte
+  // el orden de los argumentos al pasar de (K,L) a coordenadas de pantalla.
+  const px = (K, L) => sx(L);
+  const py = (K, L) => sy(K);
+
+  // --- Mapa de isocuantas (3 niveles: por debajo, en, y por encima de Q0) ---
+  const levels = [st.Q0 * 0.55, st.Q0, st.Q0 * 1.55];
+  const levelStyles = [{ op: 0.55, w: 1.3 }, { op: 1, w: 2.2 }, { op: 0.55, w: 1.3 }];
+  levels.forEach((Qlev, idx) => {
+    const isPiecewise = (st.formKey === "leontief" || st.formKey === "sustitutos");
+    const ptsRaw = computeIsoquantPath(st.formKey, Qlev, params, Kmax, isPiecewise ? Lmax : Lmax * 1.5);
+    if (ptsRaw.length < 2) return;
+    // Leontief y sustitutos perfectos devuelven geometría exacta (esquina o recta) ya
+    // acotada al dominio [0,Kmax]x[0,Lmax]; el recorte con interpolación por borde solo
+    // es necesario (y válido) para las isocuantas suaves y monótonas de las demás formas.
+    const visiblePts = isPiecewise
+      ? ptsRaw.filter(([K, L]) => K <= Kmax * 1.02 && L <= Lmax * 1.02)
+      : clipPolylineToLmax(ptsRaw, Lmax).filter(([K]) => K <= Kmax * 1.02);
+    if (visiblePts.length < 2) return;
+    const svgPts = visiblePts.map(([K, L]) => [px(K, L), py(K, L)]);
+    E.el("path", {
+      d: E.pathFromPoints(svgPts), fill: "none", stroke: "var(--accent)",
+      "stroke-width": levelStyles[idx].w, opacity: levelStyles[idx].op
+    }, svg);
+    // Para Leontief se marca el vértice de la "L" con un punto, ya que es el único
+    // punto técnicamente eficiente de la isocuanta y ayuda a leer la forma angular.
+    if (isPiecewise && st.formKey === "leontief") {
+      const p = params;
+      const vK = p.a * Qlev, vL = Math.min(p.b * Qlev, Lmax);
+      E.el("circle", { cx: px(vK, vL), cy: py(vK, vL), r: 2.6, fill: "var(--accent)", opacity: levelStyles[idx].op }, svg);
+    }
+    if (idx === 1) {
+      const lastPt = svgPts[Math.floor(svgPts.length * 0.82)] || svgPts[svgPts.length - 1];
+      // Si el punto de referencia queda muy cerca del borde derecho del panel (frecuente
+      // en Leontief, cuyo tramo horizontal se extiende hasta el límite del dominio), se
+      // ancla la etiqueta hacia la izquierda para que no quede cortada por el borde del SVG.
+      const nearRightEdge = lastPt[0] > x1 - 55;
+      E.drawLabelWithHalo(svg, nearRightEdge ? lastPt[0] - 6 : lastPt[0] + 4, lastPt[1] - 4, `Q₀=${Qlev.toFixed(0)}`, {
+        fontSize: 9.5, color: "var(--accent)", anchor: nearRightEdge ? "end" : "start"
+      });
+    }
+  });
+
+  // --- Isocosto de largo plazo, tangente en (K*,L*) ---
+  // w*L + r*K = C*  =>  L = (C* - r*K)/w
+  const Cstar = st.w * lr.L + st.r * lr.K;
+  const KatL0 = Cstar / st.r; // K cuando L=0
+  const LatK0 = Cstar / st.w; // L cuando K=0
+  const isocostPts = [[0, LatK0], [KatL0, 0]].map(([K, L]) => [px(K, L), py(K, L)]);
+  E.el("path", {
+    d: E.pathFromPoints(isocostPts), fill: "none", stroke: "var(--accent2)",
+    "stroke-width": 2, "stroke-dasharray": "6,3"
+  }, svg);
+
+  // punto óptimo de largo plazo
+  const optPx = [px(lr.K, lr.L), py(lr.K, lr.L)];
+  E.el("circle", { cx: optPx[0], cy: optPx[1], r: 4.5, fill: "var(--accent2)", stroke: "var(--panel-bg)", "stroke-width": 1.5 }, svg);
+  E.drawLabelWithHalo(svg, optPx[0] + 7, optPx[1] - 7, "E* (LP)", { color: "var(--accent2)", fontSize: 10.5 });
+
+  // --- Sendero de expansión de largo plazo: unir orígenes de E*(Q) para varios Q ---
+  const expansionPts = [];
+  for (let i = 1; i <= 20; i++) {
+    const Qi = (i / 20) * (st.Q0 * 1.7);
+    const lri = E.longRunCost(st.formKey, Qi, st.w, st.r, params);
+    if (lri.K <= Kmax * 1.05 && lri.L <= Lmax * 1.05) expansionPts.push([px(lri.K, lri.L), py(lri.K, lri.L)]);
+  }
+  if (expansionPts.length > 1) {
+    E.el("path", {
+      d: E.pathFromPoints(expansionPts), fill: "none", stroke: "var(--accent2)",
+      "stroke-width": 1.4, opacity: 0.55
+    }, svg);
+  }
+
+  // --- Sendero de corto plazo: K fijo en Kbar, variando L ---
+  // recta horizontal en K=Kbar (ahora en el eje de ordenadas), marcando el punto
+  // donde Q(Kbar,L)=Q0
+  if (st.Kbar <= Kmax) {
+    const pyK = py(st.Kbar, 0);
+    E.el("line", { x1: x0, y1: pyK, x2: x1, y2: pyK, stroke: "var(--accent4)", "stroke-width": 1.6, "stroke-dasharray": "3,3" }, svg);
+    const Lsr = f.Lstar_from_KQ(st.Kbar, st.Q0, params);
+    if (!isNaN(Lsr) && Lsr >= 0 && Lsr <= Lmax * 1.2) {
+      const srPx = [px(st.Kbar, Lsr), py(st.Kbar, Lsr)];
+      E.el("circle", { cx: srPx[0], cy: srPx[1], r: 4.5, fill: "var(--accent4)", stroke: "var(--panel-bg)", "stroke-width": 1.5 }, svg);
+      E.drawLabelWithHalo(svg, srPx[0] + 7, srPx[1] + 12, "A (CP)", { color: "var(--accent4)", fontSize: 10.5 });
+      // isocosto de corto plazo por A (referencia, más tenue)
+      const CshortA = st.w * Lsr + st.r * st.Kbar;
+      const KatL0b = CshortA / st.r, LatK0b = CshortA / st.w;
+      const scPts = [[0, LatK0b], [KatL0b, 0]].map(([K, L]) => [px(K, L), py(K, L)]);
+      E.el("path", { d: E.pathFromPoints(scPts), fill: "none", stroke: "var(--accent4)", "stroke-width": 1.3, "stroke-dasharray": "2,3", opacity: 0.6 }, svg);
+    } else {
+      E.drawLabelWithHalo(svg, x0 + 6, pyK - 6, "K̄ no alcanza Q₀", { fontSize: 9.5, color: "var(--accent4)" });
+    }
+  }
+
+  // etiqueta isocosto LP
+  {
+    const labelK = KatL0 * 0.35, labelL = LatK0 * 0.65;
+    E.drawLabelWithHalo(svg, px(labelK, labelL), py(labelK, labelL) - 4, "isocosto LP", { fontSize: 9.5, color: "var(--accent2)" });
+  }
+
+  // valores
+  const valuesBox = document.getElementById("valuesIso");
+  E.clear(valuesBox);
+  const rows = [
+    ["K* (LP)", lr.K.toFixed(2)],
+    ["L* (LP)", lr.L.toFixed(2)],
+    ["CT (LP)", lr.CT.toFixed(2)],
+    ["K̄ (CP)", st.Kbar.toFixed(2)]
+  ];
+  rows.forEach(([k, v]) => {
+    const box = document.createElement("div");
+    box.className = "value-box";
+    box.innerHTML = `<div class="k">${k}</div><div class="v">${v}</div>`;
+    valuesBox.appendChild(box);
+  });
+}
+
+window.__renderIsoPanel = renderIsoPanel;
+})();
+
+// ============================================================
+// 7. PANEL 3 — Familia de curvas medias/marginales + envolvente LP
+// ============================================================
+(function () {
+"use strict";
+const E = window.CostosEngine;
+const FORMS = E.FORMS;
+
+function computeCurveSet(formKey, Kbar, w, r, params, QMAX, N) {
+  N = N || 140;
+  const rows = [];
+  for (let i = 1; i <= N; i++) {
+    const Q = (i / N) * QMAX;
+    const c = E.shortRunCostAtQ(formKey, Q, Kbar, w, r, params);
+    if (!c) break;
+    const CMg = E.marginalCost(formKey, Q, Kbar, w, r, params);
+    rows.push({ Q, CMe: c.CMe, CVMe: c.CVMe, CFMe: c.CFMe, CMg, CT: c.CT });
+  }
+  return rows;
+}
+
+function computeLREnvelope(formKey, w, r, params, QMAX, N) {
+  N = N || 100;
+  const rows = [];
+  for (let i = 1; i <= N; i++) {
+    const Q = (i / N) * QMAX;
+    const lr = E.longRunCost(formKey, Q, w, r, params);
+    rows.push({ Q, CMeLR: lr.CT / Q });
+  }
+  // CMgLR vía diferencias finitas sobre CTLP
+  for (let i = 0; i < rows.length; i++) {
+    const Q = rows[i].Q;
+    const h = Math.max(0.01, Q * 0.02);
+    const lr1 = E.longRunCost(formKey, Q + h, w, r, params);
+    const lr0 = E.longRunCost(formKey, Math.max(Q - h, 1e-4), w, r, params);
+    rows[i].CMgLR = (lr1.CT - lr0.CT) / ((Q + h) - Math.max(Q - h, 1e-4));
+  }
+  return rows;
+}
+
+function renderEnvelopePanel() {
+  const app = window.__CostosApp;
+  const st = app.state;
+  const svg = document.getElementById("svgEnvelope");
+  E.clear(svg);
+  const params = st.params[st.formKey];
+
+  const W = 900, H = 380;
+  const margin = { l: 54, r: 20, t: 16, b: 38 };
+  const x0 = margin.l, x1 = W - margin.r, y0 = H - margin.b, y1 = margin.t;
+
+  const QMAX = 70;
+
+  // Curva "en vivo" (Kbar actual) + curvas capturadas
+  const allSets = [];
+  // set en vivo (siempre visible, semitransparente si hay snapshots, para no confundir)
+  const liveSet = computeCurveSet(st.formKey, st.Kbar, st.w, st.r, params, QMAX);
+  allSets.push({ Kbar: st.Kbar, color: "var(--text)", data: liveSet, live: true });
+  st.kSnapshots.forEach(s => {
+    allSets.push({ Kbar: s.Kbar, color: s.color, data: computeCurveSet(st.formKey, s.Kbar, st.w, st.r, params, QMAX), live: false });
+  });
+
+  let lrData = null;
+  if (st.showEnvelope) lrData = computeLREnvelope(st.formKey, st.w, st.r, params, QMAX);
+
+  // Rango Y: se ignora el tramo inicial Q < QMAX*0.08, donde CFMe y CMe divergen
+  // asintóticamente a infinito (Q→0) — ese tramo no aporta información de escala útil
+  // y, de incluirse, aplastaría el resto de las curvas contra el eje horizontal.
+  let yMax = 1;
+  const QSKIP = QMAX * 0.08;
+  const activeKeys = Object.keys(st.curveVisibility).filter(k => st.curveVisibility[k]);
+  allSets.forEach(set => {
+    set.data.forEach(row => {
+      if (row.Q < QSKIP) return;
+      activeKeys.forEach(k => {
+        const v = row[k];
+        if (v != null && isFinite(v)) yMax = Math.max(yMax, v);
+      });
+    });
+  });
+  if (lrData) lrData.forEach(row => {
+    if (row.Q < QSKIP) return;
+    if (st.curveVisibility.CMe && isFinite(row.CMeLR)) yMax = Math.max(yMax, row.CMeLR);
+    if (st.curveVisibility.CMg && isFinite(row.CMgLR)) yMax = Math.max(yMax, row.CMgLR);
+  });
+  yMax *= 1.12;
+
+  const { sx, sy } = E.drawAxes(svg, {
+    x0, y0, x1, y1,
+    xDomain: [0, QMAX], yDomain: [0, yMax],
+    xLabel: "Q (cantidad producida)", yLabel: "Costo por unidad ($)",
+    xTicks: 7, yTicks: 6
+  });
+
+  function drawSeries(data, key, color, width, dash, opacity) {
+    const pts = data.filter(r => r[key] != null && isFinite(r[key])).map(r => [sx(r.Q), sy(Math.min(r[key], yMax))]);
+    if (pts.length < 2) return;
+    const attrs = { d: E.pathFromPoints(pts), fill: "none", stroke: color, "stroke-width": width };
+    if (dash) attrs["stroke-dasharray"] = dash;
+    if (opacity !== undefined) attrs.opacity = opacity;
+    E.el("path", attrs, svg);
+    return pts[pts.length - 1];
+  }
+
+  const seriesDefs = [
+    { key: "CMe", dash: null },
+    { key: "CVMe", dash: null },
+    { key: "CFMe", dash: "4,3" },
+    { key: "CMg", dash: null }
+  ];
+  const baseColors = { CMe: "#1f5f6b", CVMe: "#6b5b95", CFMe: "#a8562f", CMg: "#8a9a5b" };
+
+  // dibujar cada set de corto plazo
+  allSets.forEach(set => {
+    const opacity = set.live ? 0.95 : 0.85;
+    const widthBoost = set.live ? 1 : 0;
+    seriesDefs.forEach(sd => {
+      if (!st.curveVisibility[sd.key]) return;
+      const color = set.live ? baseColors[sd.key] : set.color;
+      const lastPt = drawSeries(set.data, sd.key, color, (sd.key === "CMg" ? 2 : 1.7) + widthBoost * 0, sd.dash, set.live ? 1 : 0.8);
+      if (lastPt && set.live) {
+        E.drawLabelWithHalo(svg, lastPt[0] - 26, lastPt[1] - 6, sd.key, { fontSize: 9.5, color });
+      }
+    });
+    // La identificación de cada curva capturada (K̄=…) se muestra en el chip de
+    // color correspondiente en la barra superior, no como etiqueta flotante en el
+    // gráfico: en el extremo derecho las curvas de distintos K̄ suelen converger o
+    // cruzarse, y las etiquetas allí se superponían entre sí y con las de la curva viva.
+  });
+
+  // envolvente de largo plazo
+  if (lrData) {
+    if (st.curveVisibility.CMe) {
+      const pts = lrData.filter(r => isFinite(r.CMeLR)).map(r => [sx(r.Q), sy(Math.min(r.CMeLR, yMax))]);
+      E.el("path", { d: E.pathFromPoints(pts), fill: "none", stroke: "var(--accent2)", "stroke-width": 3 }, svg);
+      const lp = pts[pts.length - 1];
+      E.drawLabelWithHalo(svg, lp[0] - 8, lp[1] - 10, "CMeLP", { fontSize: 10.5, color: "var(--accent2)", weight: 700, anchor: "end" });
+    }
+    if (st.curveVisibility.CMg) {
+      const pts = lrData.filter(r => isFinite(r.CMgLR)).map(r => [sx(r.Q), sy(Math.min(r.CMgLR, yMax))]);
+      E.el("path", { d: E.pathFromPoints(pts), fill: "none", stroke: "var(--accent2)", "stroke-width": 2, "stroke-dasharray": "1,4" }, svg);
+      const lp = pts[pts.length - 1];
+      E.drawLabelWithHalo(svg, lp[0] - 8, lp[1] + 14, "CMgLP", { fontSize: 9.5, color: "var(--accent2)", anchor: "end" });
+    }
+  }
+
+  // línea vertical en Q0
+  if (st.Q0 <= QMAX) {
+    E.el("line", { x1: sx(st.Q0), y1: y0, x2: sx(st.Q0), y2: y1, stroke: "var(--text-muted)", "stroke-width": 1, "stroke-dasharray": "2,3" }, svg);
+  }
+
+  // valores del set en vivo en Q0
+  const valuesBox = document.getElementById("valuesEnvelope");
+  E.clear(valuesBox);
+  const c0 = E.shortRunCostAtQ(st.formKey, st.Q0, st.Kbar, st.w, st.r, params);
+  const cmg0 = E.marginalCost(st.formKey, st.Q0, st.Kbar, st.w, st.r, params);
+  const rows = [
+    ["CMe(Q₀)", c0 ? c0.CMe.toFixed(3) : "—"],
+    ["CVMe(Q₀)", c0 ? c0.CVMe.toFixed(3) : "—"],
+    ["CFMe(Q₀)", c0 ? c0.CFMe.toFixed(3) : "—"],
+    ["CMg(Q₀)", cmg0 != null ? cmg0.toFixed(3) : "—"],
+    ["curvas capturadas", String(st.kSnapshots.length)]
+  ];
+  rows.forEach(([k, v]) => {
+    const box = document.createElement("div");
+    box.className = "value-box";
+    box.innerHTML = `<div class="k">${k}</div><div class="v">${v}</div>`;
+    valuesBox.appendChild(box);
+  });
+}
+
+window.__renderEnvelopePanel = renderEnvelopePanel;
+})();
+
+// ============================================================
+// 8. DERIVACIÓN ANALÍTICA (texto dependiente de la forma elegida)
+// ============================================================
+(function () {
+"use strict";
+const E = window.CostosEngine;
+const FORMS = E.FORMS;
+
+const DERIVATIONS = {
+  cobb_douglas: `
+    <p><strong>Largo plazo (K y L libres).</strong> El problema de minimización de costos sujeto a un nivel de producción $Q$ se plantea mediante el lagrangiano:</p>
+    <div class="eq-block">$$\\mathscr{L}(K,L,\\mu) = wL + rK + \\mu\\left(Q - A K^{\\alpha}L^{\\beta}\\right)$$</div>
+    <p>Condiciones de primer orden (K y L son ambas variables de elección):</p>
+    <div class="eq-block">$$\\frac{\\partial \\mathscr{L}}{\\partial K} = r - \\mu \\alpha A K^{\\alpha-1}L^{\\beta} = 0 \\qquad
+    \\frac{\\partial \\mathscr{L}}{\\partial L} = w - \\mu \\beta A K^{\\alpha}L^{\\beta-1} = 0 \\qquad
+    \\frac{\\partial \\mathscr{L}}{\\partial \\mu} = Q - A K^{\\alpha}L^{\\beta} = 0$$</div>
+    <p>Dividiendo la primera condición por la segunda se elimina el multiplicador $\\mu$ (la utilidad marginal del gasto) y se obtiene la condición de tangencia:</p>
+    <div class="eq-block">$$\\text{TMST}_{L,K} = \\frac{\\partial Q/\\partial L}{\\partial Q/\\partial K} = \\frac{\\beta}{\\alpha}\\frac{K}{L} = \\frac{w}{r}$$</div>
+    <p>De donde surge el sendero de expansión $K^*/L^* = (\\alpha/\\beta)(w/r)$; sustituyendo en la tercera condición (la restricción de producción) se despejan las demandas condicionales $K^*(w,r,Q)$ y $L^*(w,r,Q)$, y $CTLP(Q)=wL^*+rK^*$. Esta función es homogénea de grado $1/(\\alpha+\\beta)$ en $Q$: economías de escala si $\\alpha+\\beta>1$, deseconomías si $\\alpha+\\beta<1$, rendimientos constantes si $\\alpha+\\beta=1$.</p>
+    <p><strong>Corto plazo ($K=\\bar K$ fijo).</strong> El capital deja de ser variable de elección: la firma no puede igualar $\\partial\\mathscr{L}/\\partial K=0$ porque $K$ no responde a $w,r$. El problema se reduce a una sola variable,</p>
+    <div class="eq-block">$$\\min_{L} \\; wL + r\\bar K \\quad \\text{s.a.} \\quad A \\bar K^{\\alpha}L^{\\beta} = Q$$</div>
+    <p>cuya única condición relevante es la restricción misma (no hay tangencia que imponer, pues $K$ está congelado): se despeja directamente $L^*(\\bar K,Q)=\\left(Q/A\\bar K^{\\alpha}\\right)^{1/\\beta}$, y $CTCP(Q;\\bar K)=r\\bar K + wL^*(\\bar K,Q)$. El término $r\\bar K$ es un costo hundido (no depende de $Q$): de ahí la distinción entre $CF=r\\bar K$ y $CV(Q)=wL^*(\\bar K,Q)$, que no existe en el problema de largo plazo.</p>
+  `,
+  leontief: `
+    <p><strong>Largo plazo (K y L libres).</strong> Con $Q=\\min\\{K/a,\\,L/b\\}$, la función de producción no es diferenciable en el vértice, por lo que el lagrangiano estándar no aplica directamente; el problema se resuelve por inspección directa:</p>
+    <div class="eq-block">$$\\min_{K,L} \\; wL + rK \\quad \\text{s.a.} \\quad \\min\\{K/a,\\,L/b\\} = Q$$</div>
+    <p>Dado que no existe sustitución entre factores, cualquier combinación con $K/a > Q$ o $L/b > Q$ desperdicia el factor excedente sin aumentar $Q$, de modo que el óptimo se ubica siempre en el vértice de la isocuanta:</p>
+    <div class="eq-block">$$K^*=aQ, \\qquad L^*=bQ$$</div>
+    <p>y $CTLP(Q)=(ra+wb)Q$, lineal en $Q$, con $CMeLP=CMgLP=ra+wb$ constante (rendimientos constantes a escala por construcción).</p>
+    <p><strong>Corto plazo ($K=\\bar K$ fijo).</strong> Al no poder ajustar $K$, la firma solo controla $L$:</p>
+    <div class="eq-block">$$\\min_{L} \\; wL + r\\bar K \\quad \\text{s.a.} \\quad \\min\\{\\bar K/a,\\,L/b\\} = Q$$</div>
+    <p>Si $\\bar K/a \\geq Q$, el capital ya excede lo necesario y basta con $L^*=bQ$, sin desperdicio de trabajo. Si $\\bar K/a < Q$, ningún nivel de $L$ permite alcanzar $Q$: la cantidad es técnicamente inalcanzable con ese $\\bar K$, y $CTCP(Q;\\bar K)$ no está definido para $Q>\\bar K/a$.</p>
+  `,
+  sustitutos: `
+    <p><strong>Largo plazo (K y L libres).</strong> Con $Q=aK+bL$ la restricción es lineal, de modo que el lagrangiano $\\mathscr{L}=wL+rK+\\mu(Q-aK-bL)$ arroja condiciones de primer orden ($r=\\mu a$, $w=\\mu b$) que son incompatibles salvo en el caso degenerado $w/b=r/a$: la solución interior no existe genéricamente, y el óptimo es de esquina. La firma emplea exclusivamente el factor con menor costo por unidad de producto,</p>
+    <div class="eq-block">$$\\text{usa solo } K \\iff \\frac{r}{a} < \\frac{w}{b}, \\qquad \\text{usa solo } L \\iff \\frac{w}{b} < \\frac{r}{a}$$</div>
+    <p>y $CTLP(Q)=\\min\\{r/a,\\,w/b\\}\\cdot Q$, lineal en $Q$.</p>
+    <p><strong>Corto plazo ($K=\\bar K$ fijo).</strong> Con $K$ congelado en $\\bar K$, el problema es trivialmente unidimensional:</p>
+    <div class="eq-block">$$\\min_{L} \\; wL + r\\bar K \\quad \\text{s.a.} \\quad a\\bar K + bL = Q$$</div>
+    <p>de donde $L^*(\\bar K,Q)=\\max\\{0,\\,(Q-a\\bar K)/b\\}$: mientras $a\\bar K \\geq Q$, el capital fijo por sí solo alcanza para producir $Q$ y $CV=0$, con toda la producción explicada por el costo fijo $CF=r\\bar K$.</p>
+  `,
+  ces: `
+    <p><strong>Largo plazo (K y L libres).</strong> Con $Q=A\\left[\\alpha K^{\\rho}+(1-\\alpha)L^{\\rho}\\right]^{1/\\rho}$, el lagrangiano es:</p>
+    <div class="eq-block">$$\\mathscr{L}(K,L,\\mu) = wL + rK + \\mu\\left(Q - A\\left[\\alpha K^{\\rho}+(1-\\alpha)L^{\\rho}\\right]^{1/\\rho}\\right)$$</div>
+    <p>Las condiciones de primer orden $\\partial\\mathscr{L}/\\partial K=0$ y $\\partial\\mathscr{L}/\\partial L=0$, divididas entre sí para eliminar $\\mu$, entregan la condición de tangencia:</p>
+    <div class="eq-block">$$\\left(\\frac{K}{L}\\right)^{1-\\rho} = \\frac{1-\\alpha}{\\alpha}\\cdot\\frac{w}{r} \\quad\\Longrightarrow\\quad \\frac{K^*}{L^*} = \\left[\\frac{1-\\alpha}{\\alpha}\\cdot\\frac{w}{r}\\right]^{\\sigma}, \\qquad \\sigma=\\frac{1}{1-\\rho}$$</div>
+    <p>donde $\\sigma$ es la elasticidad de sustitución constante. Sustituyendo en $\\partial\\mathscr{L}/\\partial\\mu=0$ (la restricción de producción) se obtienen $K^*(w,r,Q)$, $L^*(w,r,Q)$ y $CTLP(Q)=wL^*+rK^*$. Los casos polares: $\\rho\\to 0$ converge a Cobb-Douglas, $\\rho=1$ a sustitutos perfectos, $\\rho\\to-\\infty$ a Leontief.</p>
+    <p><strong>Corto plazo ($K=\\bar K$ fijo).</strong> El multiplicador $\\mu$ y la condición de tangencia en $K$ dejan de aplicarse porque $K$ no es variable de elección; el problema se reduce a:</p>
+    <div class="eq-block">$$\\min_{L} \\; wL + r\\bar K \\quad \\text{s.a.} \\quad A\\left[\\alpha \\bar K^{\\rho}+(1-\\alpha)L^{\\rho}\\right]^{1/\\rho} = Q$$</div>
+    <p>que se resuelve despejando $L$ numéricamente de la restricción (sin condición de tangencia alguna), y $CTCP(Q;\\bar K)=r\\bar K + wL^*(\\bar K,Q)$.</p>
+  `,
+  cubica: `
+    <p><strong>Largo plazo (K y L libres).</strong> Con $Q=A\\,K^{\\alpha}\\left(aL+bL^2-cL^3\\right)$, el lagrangiano $\\mathscr{L}=wL+rK+\\mu\\left(Q-AK^{\\alpha}g(L)\\right)$, con $g(L)=aL+bL^2-cL^3$, entrega las condiciones $\\partial\\mathscr{L}/\\partial K=0$ y $\\partial\\mathscr{L}/\\partial L=0$; su cociente da la tangencia $\\text{TMST}_{L,K}=w/r$. Al no existir forma cerrada simple para $g(L)$, el óptimo $(K^*,L^*)$ se obtiene numéricamente minimizando $wL+rK$ sujeto a la restricción, para cada $Q$.</p>
+    <p><strong>Corto plazo ($K=\\bar K$ fijo).</strong> Sin $K$ como variable de elección, el problema es:</p>
+    <div class="eq-block">$$\\min_{L} \\; wL + r\\bar K \\quad \\text{s.a.} \\quad A\\bar K^{\\alpha}\\left(aL+bL^2-cL^3\\right) = Q$$</div>
+    <p>Para $\\bar K$ fijo, $g(L)$ reproduce la forma canónica de libro de texto: el producto marginal $PMg_L=A\\bar K^{\\alpha}(a+2bL-3cL^2)$ primero <em>crece</em> (rendimientos marginales crecientes, por especialización del factor variable) y luego <em>decrece</em> (ley de rendimientos decrecientes), generando el punto de inflexión característico:</p>
+    <div class="eq-block">$$CMg(Q) = \\frac{w}{\\partial Q/\\partial L}= \\frac{w}{A\\bar K^{\\alpha}\\left(a+2bL-3cL^2\\right)}$$</div>
+    <p>Dado que $CMg$ es inversamente proporcional al producto marginal del factor variable, el mínimo de $CMg$ ocurre exactamente donde $PMg_L$ alcanza su máximo (punto de inflexión de $g$), y el mínimo de $CVMe$ ocurre donde $CMg=CVMe$, en el punto donde el producto medio del trabajo se maximiza. El tramo económicamente relevante de $L$ se acota a $\\left[0,\\,L_{\\text{pico}}\\right]$, raíz positiva de $g'(L)=0$; más allá, el producto marginal es negativo (estadio III de producción).</p>
+  `
+};
+
+function renderDefinitionAndDerivation() {
+  const app = window.__CostosApp;
+  const st = app.state;
+  const f = FORMS[st.formKey];
+
+  document.getElementById("formTitle").textContent = f.label;
+  document.getElementById("formEquation").innerHTML = `$$${f.eq}$$`;
+  document.getElementById("derivationBody").innerHTML = DERIVATIONS[st.formKey];
+
+  if (window.MathJax && window.MathJax.typesetPromise) {
+    window.MathJax.typesetPromise([
+      document.getElementById("panelDefinition"),
+      document.getElementById("derivationBody")
+    ]);
+  }
+}
+
+window.__renderDefinitionAndDerivation = renderDefinitionAndDerivation;
+})();
+
+// ============================================================
+// 9. ORQUESTACIÓN GENERAL Y ARRANQUE
+// ============================================================
+(function () {
+"use strict";
+
+function renderAll() {
+  window.__renderDefinitionAndDerivation();
+  window.__renderCPPanel();
+  window.__renderIsoPanel();
+  window.__renderEnvelopePanel();
+}
+window.renderAll = renderAll;
+
+document.addEventListener("DOMContentLoaded", function () {
+  window.__initApp();
+});
+})();
+
+</script>
+</body>
+</html>
