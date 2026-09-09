@@ -205,6 +205,57 @@
     font-weight: 600;
   }
 
+  /* ---- Zoom / pan wrapper ---- */
+  .svg-wrap {
+    position: relative;
+  }
+  .svg-wrap svg {
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .zoom-controls {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    z-index: 2;
+  }
+  .zoom-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    opacity: 0.85;
+    box-shadow: var(--shadow);
+  }
+  .zoom-btn:hover { opacity: 1; background: var(--highlight-bg); }
+  .zoom-hint {
+    position: absolute;
+    bottom: 4px;
+    right: 6px;
+    font-size: 9.5px;
+    color: var(--text-muted);
+    background: var(--panel-bg);
+    padding: 1px 6px;
+    border-radius: 8px;
+    opacity: 0.7;
+    pointer-events: none;
+    z-index: 2;
+  }
+
   /* ---- Values panel ---- */
   .values-strip {
     display: grid;
@@ -385,15 +436,23 @@
   <div class="panels">
     <div class="panel" id="panelCP">
       <h2>Costo total, fijo y variable de corto plazo</h2>
-      <p class="panel-desc">A $\bar K$ constante, curvas $CT(Q)$, $CF$ y $CV(Q)$ en función de la cantidad producida.</p>
-      <svg id="svgCP" viewBox="0 0 480 340" style="width:100%; height:auto;"></svg>
+      <p class="panel-desc">A $\bar K$ constante, curvas $CT(Q)$, $CF$ y $CV(Q)$ en función de la cantidad producida. Incluye opcionalmente $CTLP(Q)$ y $CVLP(Q)$ de largo plazo para comparar.</p>
+      <div class="curve-toggles" id="curveTogglesCP"></div>
+      <div class="svg-wrap">
+        <svg id="svgCP" viewBox="0 0 480 340" style="width:100%; height:auto;"></svg>
+        <div class="zoom-hint">rueda: zoom · arrastrar: mover</div>
+      </div>
       <div class="values-strip" id="valuesCP"></div>
     </div>
 
     <div class="panel" id="panelIso">
       <h2>Mapa de isocuantas, isocostos y sendero de expansión</h2>
       <p class="panel-desc">Isocuantas de $f(K,L)$, recta de isocosto de largo plazo tangente a $Q_0$, y sendero de expansión de corto y largo plazo.</p>
-      <svg id="svgIso" viewBox="0 0 480 340" style="width:100%; height:auto;"></svg>
+      <div class="curve-toggles" id="curveTogglesIso"></div>
+      <div class="svg-wrap">
+        <svg id="svgIso" viewBox="0 0 480 340" style="width:100%; height:auto;"></svg>
+        <div class="zoom-hint">rueda: zoom · arrastrar: mover</div>
+      </div>
       <div class="values-strip" id="valuesIso"></div>
     </div>
   </div>
@@ -413,7 +472,10 @@
 
       <div class="curve-toggles" id="curveToggles"></div>
 
-      <svg id="svgEnvelope" viewBox="0 0 900 380" style="width:100%; height:auto;"></svg>
+      <div class="svg-wrap">
+        <svg id="svgEnvelope" viewBox="0 0 900 380" style="width:100%; height:auto;"></svg>
+        <div class="zoom-hint">rueda: zoom · arrastrar: mover</div>
+      </div>
       <div class="values-strip" id="valuesEnvelope"></div>
     </div>
   </div>
@@ -670,6 +732,22 @@ function drawAxes(svg, opts) {
   return { sx, sy };
 }
 
+// Crea (o reutiliza) un <clipPath> en <defs> que recorta exactamente al
+// rectángulo de datos [x0,x1]×[y1,y0], y devuelve un <g clip-path="..."> donde
+// el panel debe dibujar todo su contenido de curvas, puntos y etiquetas. Esto
+// garantiza que nada quede visualmente fuera del área delimitada por los ejes,
+// sin importar el nivel de zoom ni la posición de las etiquetas de las curvas.
+function createClippedLayer(svg, clipId, x0, y0, x1, y1) {
+  let defs = svg.querySelector("defs");
+  if (!defs) defs = el("defs", {}, svg);
+  let clipPath = svg.querySelector("#" + clipId);
+  if (clipPath) clipPath.remove(); // E.clear(svg) ya vació el SVG, pero por robustez
+  clipPath = el("clipPath", { id: clipId }, defs);
+  // y1 es el borde superior (menor coordenada de píxel), y0 el inferior
+  el("rect", { x: x0, y: y1, width: x1 - x0, height: y0 - y1 }, clipPath);
+  return el("g", { "clip-path": `url(#${clipId})` }, svg);
+}
+
 function fmtTick(v) {
   if (Math.abs(v) < 0.005) return "0";
   if (Math.abs(v) >= 100) return v.toFixed(0);
@@ -697,9 +775,283 @@ function drawLabelWithHalo(svg, x, y, text, opts) {
 // exponer
 window.CostosEngine = {
   FORMS, shortRunCostAtQ, marginalCost, longRunCost,
-  el, clear, makeScale, drawAxes, pathFromPoints, drawLabelWithHalo, fmtTick, SVGNS
+  el, clear, makeScale, drawAxes, createClippedLayer, pathFromPoints, drawLabelWithHalo, fmtTick, SVGNS
 };
 
+})();
+
+// ============================================================
+// 3.1 MÓDULO DE ZOOM / PAN REUTILIZABLE PARA PANELES SVG
+// ============================================================
+// Dos modos, según la naturaleza del panel:
+//
+// - modo "series" (paneles 1 y 3: costo en función de Q): el usuario controla
+//   el zoom/pan del eje X (Q) únicamente. El eje Y se recalcula SIEMPRE de
+//   forma automática, en cada render, a partir de los valores reales de las
+//   curvas visibles dentro del rango X activo — igual que hace cualquier
+//   herramienta de graficación de series. Si el eje Y también quedara sujeto
+//   al mismo factor de zoom que el X, tras zooms sucesivos el rango Y se
+//   desincroniza del rango real de las curvas en ese tramo de X y estas
+//   quedan fuera de vista (el bug que este módulo corrige).
+//
+// - modo "plane" (panel 2: isocuantas en el plano K,L): no hay una variable
+//   dependiente de otra; ambos ejes son coordenadas del mismo espacio. Aquí
+//   el zoom sí actúa sobre X e Y con el mismo factor simultáneamente, para
+//   no distorsionar ángulos ni pendientes (una isocuanta o un isocosto deben
+//   verse con la misma geometría relativa en cualquier nivel de zoom).
+(function () {
+"use strict";
+
+// Estado por panel: para modo "series" solo se persiste el rango X
+// ({x0,x1}); para modo "plane" se persiste el rectángulo completo.
+const viewports = {}; // { [panelId]: {x0,x1} | {x0,x1,y0,y1} | null }
+
+function getViewport(panelId) {
+  return viewports[panelId] || null;
+}
+function setViewport(panelId, vp) {
+  viewports[panelId] = vp;
+}
+function resetViewport(panelId) {
+  viewports[panelId] = null;
+}
+
+// Devuelve el xDomain efectivo (modo "series") dado el dominio X natural.
+function effectiveXDomain(panelId, fullXDomain) {
+  const vp = getViewport(panelId);
+  if (!vp) return fullXDomain;
+  return [vp.x0, vp.x1];
+}
+
+// Devuelve {xDomain,yDomain} efectivos (modo "plane") dado el dominio natural.
+function effectiveDomain(panelId, fullDomain) {
+  const vp = getViewport(panelId);
+  if (!vp) return fullDomain;
+  return { xDomain: [vp.x0, vp.x1], yDomain: [vp.y0, vp.y1] };
+}
+
+// --- Modo "series": zoom/pan de un único eje X ---
+// fullXDomain: [min,max] — dominio natural completo del eje X.
+// onZoomChange: callback que dispara el re-render del panel (recalcula Y).
+function initZoomPanX(svg, panelId, fullXDomain, onZoomChange) {
+  const MIN_SPAN_FRACTION = 0.03;
+
+  function currentX() {
+    const vp = getViewport(panelId);
+    if (vp) return { x0: vp.x0, x1: vp.x1 };
+    return { x0: fullXDomain[0], x1: fullXDomain[1] };
+  }
+
+  function zoomAt(dataX, factor) {
+    const dom = currentX();
+    const fullSpan = fullXDomain[1] - fullXDomain[0];
+    let span = (dom.x1 - dom.x0) / factor;
+    span = Math.max(fullSpan * MIN_SPAN_FRACTION, Math.min(fullSpan, span));
+    const rel = (dom.x1 - dom.x0) > 0 ? (dataX - dom.x0) / (dom.x1 - dom.x0) : 0.5;
+    let nx0 = dataX - rel * span, nx1 = nx0 + span;
+    if (nx0 < fullXDomain[0]) { nx1 += fullXDomain[0] - nx0; nx0 = fullXDomain[0]; }
+    if (nx1 > fullXDomain[1]) { nx0 -= nx1 - fullXDomain[1]; nx1 = fullXDomain[1]; }
+    nx0 = Math.max(fullXDomain[0], nx0);
+    if (span >= fullSpan * 0.999) resetViewport(panelId);
+    else setViewport(panelId, { x0: nx0, x1: nx1 });
+    if (onZoomChange) onZoomChange();
+  }
+
+  function panBy(dataDX) {
+    const dom = currentX();
+    const span = dom.x1 - dom.x0;
+    let nx0 = dom.x0 + dataDX, nx1 = dom.x1 + dataDX;
+    if (nx0 < fullXDomain[0]) { nx0 = fullXDomain[0]; nx1 = nx0 + span; }
+    if (nx1 > fullXDomain[1]) { nx1 = fullXDomain[1]; nx0 = nx1 - span; }
+    setViewport(panelId, { x0: nx0, x1: nx1 });
+    if (onZoomChange) onZoomChange();
+  }
+
+  if (svg.__zoomWired) return;
+  svg.__zoomWired = true;
+
+  function dataXFromEvent(ev) {
+    const rect = svg.getBoundingClientRect();
+    const vb = svg.viewBox.baseVal;
+    const px = vb.x + (ev.clientX - rect.left) / rect.width * vb.width;
+    const pb = svg.__pixelBounds;
+    const dom = currentX();
+    return dom.x0 + (px - pb.x0) / (pb.x1 - pb.x0) * (dom.x1 - dom.x0);
+  }
+
+  svg.addEventListener('wheel', function (ev) {
+    ev.preventDefault();
+    const dataX = dataXFromEvent(ev);
+    const factor = ev.deltaY < 0 ? 1.25 : 1 / 1.25;
+    zoomAt(dataX, factor);
+  }, { passive: false });
+
+  let dragging = false, lastClientX = 0;
+  svg.addEventListener('pointerdown', function (ev) {
+    if (!getViewport(panelId)) return;
+    dragging = true;
+    lastClientX = ev.clientX;
+    svg.setPointerCapture(ev.pointerId);
+    svg.style.cursor = 'grabbing';
+  });
+  svg.addEventListener('pointermove', function (ev) {
+    if (!dragging) return;
+    const rect = svg.getBoundingClientRect();
+    const vb = svg.viewBox.baseVal;
+    const dom = currentX();
+    const pb = svg.__pixelBounds;
+    const dxPixels = (ev.clientX - lastClientX) * (vb.width / rect.width);
+    const dataDX = -dxPixels / (pb.x1 - pb.x0) * (dom.x1 - dom.x0);
+    lastClientX = ev.clientX;
+    panBy(dataDX);
+  });
+  function endDrag() { if (dragging) { dragging = false; svg.style.cursor = ''; } }
+  svg.addEventListener('pointerup', endDrag);
+  svg.addEventListener('pointerleave', endDrag);
+
+  svg.__zoomAtX = zoomAt;
+}
+
+// --- Modo "plane": zoom/pan simultáneo de X e Y con el mismo factor ---
+function initZoomPanPlane(svg, panelId, fullDomain, onZoomChange) {
+  const MIN_SPAN_FRACTION = 0.05;
+
+  function currentDomain() {
+    const vp = getViewport(panelId);
+    if (vp) return vp;
+    return { x0: fullDomain.xDomain[0], x1: fullDomain.xDomain[1], y0: fullDomain.yDomain[0], y1: fullDomain.yDomain[1] };
+  }
+
+  function zoomAt(dataX, dataY, factor) {
+    const dom = currentDomain();
+    const fullSpanX = fullDomain.xDomain[1] - fullDomain.xDomain[0];
+    const fullSpanY = fullDomain.yDomain[1] - fullDomain.yDomain[0];
+    let spanX = (dom.x1 - dom.x0) / factor;
+    let spanY = (dom.y1 - dom.y0) / factor;
+    spanX = Math.max(fullSpanX * MIN_SPAN_FRACTION, Math.min(fullSpanX, spanX));
+    spanY = Math.max(fullSpanY * MIN_SPAN_FRACTION, Math.min(fullSpanY, spanY));
+    const relX = (dom.x1 - dom.x0) > 0 ? (dataX - dom.x0) / (dom.x1 - dom.x0) : 0.5;
+    const relY = (dom.y1 - dom.y0) > 0 ? (dataY - dom.y0) / (dom.y1 - dom.y0) : 0.5;
+    let nx0 = dataX - relX * spanX, nx1 = nx0 + spanX;
+    let ny0 = dataY - relY * spanY, ny1 = ny0 + spanY;
+    if (nx0 < fullDomain.xDomain[0]) { nx1 += fullDomain.xDomain[0] - nx0; nx0 = fullDomain.xDomain[0]; }
+    if (nx1 > fullDomain.xDomain[1]) { nx0 -= nx1 - fullDomain.xDomain[1]; nx1 = fullDomain.xDomain[1]; }
+    if (ny0 < fullDomain.yDomain[0]) { ny1 += fullDomain.yDomain[0] - ny0; ny0 = fullDomain.yDomain[0]; }
+    if (ny1 > fullDomain.yDomain[1]) { ny0 -= ny1 - fullDomain.yDomain[1]; ny1 = fullDomain.yDomain[1]; }
+    nx0 = Math.max(fullDomain.xDomain[0], nx0);
+    ny0 = Math.max(fullDomain.yDomain[0], ny0);
+    if (spanX >= fullSpanX * 0.999 && spanY >= fullSpanY * 0.999) resetViewport(panelId);
+    else setViewport(panelId, { x0: nx0, x1: nx1, y0: ny0, y1: ny1 });
+    if (onZoomChange) onZoomChange();
+  }
+
+  function panBy(dataDX, dataDY) {
+    const dom = currentDomain();
+    const spanX = dom.x1 - dom.x0, spanY = dom.y1 - dom.y0;
+    let nx0 = dom.x0 + dataDX, nx1 = dom.x1 + dataDX;
+    let ny0 = dom.y0 + dataDY, ny1 = dom.y1 + dataDY;
+    if (nx0 < fullDomain.xDomain[0]) { nx0 = fullDomain.xDomain[0]; nx1 = nx0 + spanX; }
+    if (nx1 > fullDomain.xDomain[1]) { nx1 = fullDomain.xDomain[1]; nx0 = nx1 - spanX; }
+    if (ny0 < fullDomain.yDomain[0]) { ny0 = fullDomain.yDomain[0]; ny1 = ny0 + spanY; }
+    if (ny1 > fullDomain.yDomain[1]) { ny1 = fullDomain.yDomain[1]; ny0 = ny1 - spanY; }
+    setViewport(panelId, { x0: nx0, x1: nx1, y0: ny0, y1: ny1 });
+    if (onZoomChange) onZoomChange();
+  }
+
+  if (svg.__zoomWired) return;
+  svg.__zoomWired = true;
+
+  function dataPointFromEvent(ev) {
+    const rect = svg.getBoundingClientRect();
+    const vb = svg.viewBox.baseVal;
+    const px = vb.x + (ev.clientX - rect.left) / rect.width * vb.width;
+    const py = vb.y + (ev.clientY - rect.top) / rect.height * vb.height;
+    const pb = svg.__pixelBounds;
+    const dom = currentDomain();
+    const dataX = dom.x0 + (px - pb.x0) / (pb.x1 - pb.x0) * (dom.x1 - dom.x0);
+    const dataY = dom.y0 + (pb.y0 - py) / (pb.y0 - pb.y1) * (dom.y1 - dom.y0);
+    return { dataX, dataY };
+  }
+
+  svg.addEventListener('wheel', function (ev) {
+    ev.preventDefault();
+    const { dataX, dataY } = dataPointFromEvent(ev);
+    const factor = ev.deltaY < 0 ? 1.25 : 1 / 1.25;
+    zoomAt(dataX, dataY, factor);
+  }, { passive: false });
+
+  let dragging = false, lastClientX = 0, lastClientY = 0;
+  svg.addEventListener('pointerdown', function (ev) {
+    if (!getViewport(panelId)) return;
+    dragging = true;
+    lastClientX = ev.clientX; lastClientY = ev.clientY;
+    svg.setPointerCapture(ev.pointerId);
+    svg.style.cursor = 'grabbing';
+  });
+  svg.addEventListener('pointermove', function (ev) {
+    if (!dragging) return;
+    const rect = svg.getBoundingClientRect();
+    const vb = svg.viewBox.baseVal;
+    const dom = currentDomain();
+    const pb = svg.__pixelBounds;
+    const dxPixels = (ev.clientX - lastClientX) * (vb.width / rect.width);
+    const dyPixels = (ev.clientY - lastClientY) * (vb.height / rect.height);
+    const dataDX = -dxPixels / (pb.x1 - pb.x0) * (dom.x1 - dom.x0);
+    const dataDY = dyPixels / (pb.y0 - pb.y1) * (dom.y1 - dom.y0);
+    lastClientX = ev.clientX; lastClientY = ev.clientY;
+    panBy(dataDX, dataDY);
+  });
+  function endDrag() { if (dragging) { dragging = false; svg.style.cursor = ''; } }
+  svg.addEventListener('pointerup', endDrag);
+  svg.addEventListener('pointerleave', endDrag);
+
+  svg.__zoomAtPlane = zoomAt;
+}
+
+// Botones de control (+, -, reset), comunes a ambos modos.
+function attachZoomControls(container, svg, panelId, mode, fullDomain, onZoomChange) {
+  if (container.querySelector('.zoom-controls')) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'zoom-controls';
+  const mkBtn = (label, title, handler) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'zoom-btn';
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener('click', handler);
+    return b;
+  };
+  wrap.appendChild(mkBtn('+', 'Acercar', () => {
+    if (mode === 'series') {
+      const vp = getViewport(panelId) || { x0: fullDomain[0], x1: fullDomain[1] };
+      svg.__zoomAtX((vp.x0 + vp.x1) / 2, 1.4);
+    } else {
+      const vp = getViewport(panelId) || { x0: fullDomain.xDomain[0], x1: fullDomain.xDomain[1], y0: fullDomain.yDomain[0], y1: fullDomain.yDomain[1] };
+      svg.__zoomAtPlane((vp.x0 + vp.x1) / 2, (vp.y0 + vp.y1) / 2, 1.4);
+    }
+  }));
+  wrap.appendChild(mkBtn('−', 'Alejar', () => {
+    if (mode === 'series') {
+      const vp = getViewport(panelId) || { x0: fullDomain[0], x1: fullDomain[1] };
+      svg.__zoomAtX((vp.x0 + vp.x1) / 2, 1 / 1.4);
+    } else {
+      const vp = getViewport(panelId) || { x0: fullDomain.xDomain[0], x1: fullDomain.xDomain[1], y0: fullDomain.yDomain[0], y1: fullDomain.yDomain[1] };
+      svg.__zoomAtPlane((vp.x0 + vp.x1) / 2, (vp.y0 + vp.y1) / 2, 1 / 1.4);
+    }
+  }));
+  wrap.appendChild(mkBtn('⟲', 'Restablecer vista', () => {
+    resetViewport(panelId);
+    if (onZoomChange) onZoomChange();
+  }));
+  container.appendChild(wrap);
+}
+
+window.CostosZoom = {
+  getViewport, setViewport, resetViewport,
+  effectiveXDomain, effectiveDomain,
+  initZoomPanX, initZoomPanPlane, attachZoomControls
+};
 })();
 
 // ============================================================
@@ -971,7 +1323,41 @@ window.__initApp = function () {
 const E = window.CostosEngine;
 const FORMS = E.FORMS;
 
+const CP_CURVE_DEFS = [
+  { key: "CT", label: "CT (corto plazo)", color: "#1f5f6b" },
+  { key: "CV", label: "CV (corto plazo)", color: "#6b5b95" },
+  { key: "CF", label: "CF (costo fijo)", color: "#a8562f" },
+  { key: "CTLP", label: "CTLP (largo plazo)", color: "#1f5f6b" },
+  { key: "CVLP", label: "CVLP (largo plazo)", color: "#6b5b95" }
+];
+const cpVisibility = { CT: true, CV: true, CF: true, CTLP: false, CVLP: false };
+
+function buildCPCurveToggles() {
+  const wrap = document.getElementById("curveTogglesCP");
+  if (!wrap || wrap.childElementCount) return; // ya construidos
+  CP_CURVE_DEFS.forEach(d => {
+    const lbl = document.createElement("label");
+    lbl.className = "curve-toggle";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = cpVisibility[d.key];
+    cb.addEventListener("change", () => {
+      cpVisibility[d.key] = cb.checked;
+      renderCPPanel();
+    });
+    const sw = document.createElement("span");
+    sw.className = "swatch";
+    sw.style.background = d.color;
+    if (d.key === "CTLP" || d.key === "CVLP") sw.style.opacity = "0.75";
+    lbl.appendChild(cb);
+    lbl.appendChild(sw);
+    lbl.appendChild(document.createTextNode(d.label));
+    wrap.appendChild(lbl);
+  });
+}
+
 function renderCPPanel() {
+  buildCPCurveToggles();
   const app = window.__CostosApp;
   const st = app.state;
   const svg = document.getElementById("svgCP");
@@ -983,15 +1369,15 @@ function renderCPPanel() {
   const margin = { l: 46, r: 14, t: 14, b: 34 };
   const x0 = margin.l, x1 = W - margin.r, y0 = H - margin.b, y1 = margin.t;
 
-  // Determinar rango de Q recorriendo hasta donde el Kbar actual puede producir
+  // Determinar rango de Q recorriendo hasta donde el Kbar actual puede producir.
+  // Este rango define el dominio NATURAL del panel (independiente del zoom).
   const QMAX_GLOBAL = 70;
   const points = [];
-  let QcapReached = QMAX_GLOBAL;
   const N = 90;
   for (let i = 1; i <= N; i++) {
     const Q = (i / N) * QMAX_GLOBAL;
     const c = E.shortRunCostAtQ(st.formKey, Q, st.Kbar, st.w, st.r, params);
-    if (!c) { QcapReached = Q; break; }
+    if (!c) break;
     points.push({ Q, ...c });
   }
   if (points.length < 2) {
@@ -1000,55 +1386,141 @@ function renderCPPanel() {
     return;
   }
   const QMAXplot = points[points.length - 1].Q;
-  const CTmax = Math.max(...points.map(p => p.CT));
-  const yMax = CTmax * 1.12;
+
+  // Curvas de largo plazo (CTLP, CVLP=CTLP ya que en LP no hay costo fijo: CVLP=CTLP)
+  let lrPoints = null;
+  if (cpVisibility.CTLP || cpVisibility.CVLP) {
+    lrPoints = [];
+    for (let i = 1; i <= N; i++) {
+      const Q = (i / N) * QMAXplot;
+      const lr = E.longRunCost(st.formKey, Q, st.w, st.r, params);
+      lrPoints.push({ Q, CTLP: lr.CT });
+    }
+  }
+
+  // El eje X queda sujeto al zoom del usuario; el eje Y SIEMPRE se recalcula
+  // de forma automática a partir de los valores reales de las curvas visibles
+  // dentro del rango X activo — así las curvas nunca quedan fuera de escala
+  // tras hacer zoom, sin importar cuántas veces se acerque o desplace la vista.
+  const xDomain = window.CostosZoom.effectiveXDomain("CP", [0, QMAXplot]);
+  let yMax = 0;
+  points.forEach(p => {
+    if (p.Q < xDomain[0] || p.Q > xDomain[1]) return;
+    if (cpVisibility.CT) yMax = Math.max(yMax, p.CT);
+    if (cpVisibility.CV) yMax = Math.max(yMax, p.CV);
+  });
+  if (cpVisibility.CF) yMax = Math.max(yMax, st.r * st.Kbar);
+  if (lrPoints) {
+    lrPoints.forEach(p => {
+      if (p.Q < xDomain[0] || p.Q > xDomain[1]) return;
+      if (cpVisibility.CTLP || cpVisibility.CVLP) yMax = Math.max(yMax, p.CTLP);
+    });
+  }
+  if (yMax <= 0) yMax = 1; // evita un dominio degenerado si no hay curvas visibles en el tramo
+  yMax *= 1.12;
+  const yDomain = [0, yMax];
 
   const { sx, sy } = E.drawAxes(svg, {
     x0, y0, x1, y1,
-    xDomain: [0, QMAXplot], yDomain: [0, yMax],
+    xDomain, yDomain,
     xLabel: "Q (cantidad producida)", yLabel: "Costo ($)"
   });
+  svg.__pixelBounds = { x0, x1, y0: y1, y1: y0 }; // y0/y1 del viewBox van de arriba(y1) a abajo(y0)
+
+  // Todo el contenido de datos (curvas, puntos, etiquetas) se dibuja dentro de
+  // este grupo recortado al rectángulo de ejes: así ninguna curva ni etiqueta
+  // puede quedar visualmente fuera del área delimitada por los ejes, en ningún
+  // nivel de zoom.
+  const layer = E.createClippedLayer(svg, "clipCP", x0, y0, x1, y1);
+  // Margen de seguridad en píxeles para que las etiquetas de las curvas nunca
+  // queden pegadas o cortadas contra el borde superior/inferior del panel.
+  const clampY = (py) => Math.max(y1 + 11, Math.min(y0 - 3, py));
 
   // CF: horizontal
-  const CF = st.r * st.Kbar;
-  E.el("line", { x1: x0, y1: sy(CF), x2: x1, y2: sy(CF), stroke: COLORSget("CF"), "stroke-width": 2, "stroke-dasharray": "5,3" }, svg);
-  E.drawLabelWithHalo(svg, x1 - 60, sy(CF) - 6, "CF", { color: COLORSget("CF") });
+  if (cpVisibility.CF) {
+    const CF = st.r * st.Kbar;
+    E.el("line", { x1: x0, y1: sy(CF), x2: x1, y2: sy(CF), stroke: COLORSget("CF"), "stroke-width": 2, "stroke-dasharray": "5,3" }, layer);
+    E.drawLabelWithHalo(layer, x1 - 60, clampY(sy(CF) - 6), "CF", { color: COLORSget("CF") });
+  }
 
-  // CV
-  const cvPts = points.map(p => [sx(p.Q), sy(p.CV)]);
-  E.el("path", { d: E.pathFromPoints(cvPts), fill: "none", stroke: COLORSget("CV"), "stroke-width": 2.2 }, svg);
-  const lastCV = cvPts[cvPts.length - 1];
-  E.drawLabelWithHalo(svg, lastCV[0] - 34, lastCV[1] - 8, "CV", { color: COLORSget("CV") });
+  // CV (corto plazo)
+  if (cpVisibility.CV) {
+    const cvPts = points.map(p => [sx(p.Q), sy(p.CV)]);
+    E.el("path", { d: E.pathFromPoints(cvPts), fill: "none", stroke: COLORSget("CV"), "stroke-width": 2.2 }, layer);
+    const lastCV = cvPts[cvPts.length - 1];
+    E.drawLabelWithHalo(layer, lastCV[0] - 34, clampY(lastCV[1] - 8), "CV", { color: COLORSget("CV") });
+  }
 
-  // CT
-  const ctPts = points.map(p => [sx(p.Q), sy(p.CT)]);
-  E.el("path", { d: E.pathFromPoints(ctPts), fill: "none", stroke: COLORSget("CT"), "stroke-width": 2.4 }, svg);
-  const lastCT = ctPts[ctPts.length - 1];
-  E.drawLabelWithHalo(svg, lastCT[0] - 34, lastCT[1] - 8, "CT", { color: COLORSget("CT") });
+  // CT (corto plazo)
+  if (cpVisibility.CT) {
+    const ctPts = points.map(p => [sx(p.Q), sy(p.CT)]);
+    E.el("path", { d: E.pathFromPoints(ctPts), fill: "none", stroke: COLORSget("CT"), "stroke-width": 2.4 }, layer);
+    const lastCT = ctPts[ctPts.length - 1];
+    E.drawLabelWithHalo(layer, lastCT[0] - 34, clampY(lastCT[1] - 8), "CT", { color: COLORSget("CT") });
+  }
+
+  // CTLP / CVLP (largo plazo): en el largo plazo no existe costo fijo, por lo
+  // que CTLP(Q) = CVLP(Q) — ambas curvas coinciden exactamente. Se distinguen
+  // visualmente de las de corto plazo con trazo punteado grueso, tal como
+  // corresponde a una comparación CP vs. LP en el mismo panel.
+  if (lrPoints && (cpVisibility.CTLP || cpVisibility.CVLP)) {
+    const lrSvgPts = lrPoints.map(p => [sx(p.Q), sy(p.CTLP)]);
+    if (cpVisibility.CTLP) {
+      E.el("path", {
+        d: E.pathFromPoints(lrSvgPts), fill: "none", stroke: COLORSget("CT"),
+        "stroke-width": 3, "stroke-dasharray": "1,5", "stroke-linecap": "round", opacity: 0.8
+      }, layer);
+    }
+    if (cpVisibility.CVLP && !cpVisibility.CTLP) {
+      // Si solo CVLP está tildada (sin CTLP), se dibuja igual (son la misma curva)
+      // pero con el color de CV para que la leyenda tildada sea coherente.
+      E.el("path", {
+        d: E.pathFromPoints(lrSvgPts), fill: "none", stroke: COLORSget("CV"),
+        "stroke-width": 3, "stroke-dasharray": "1,5", "stroke-linecap": "round", opacity: 0.8
+      }, layer);
+    }
+    const lastLR = lrSvgPts[lrSvgPts.length - 1];
+    const lrLabel = (cpVisibility.CTLP && cpVisibility.CVLP) ? "CTLP=CVLP" : (cpVisibility.CTLP ? "CTLP" : "CVLP");
+    E.drawLabelWithHalo(layer, lastLR[0] - 8, clampY(lastLR[1] - 16), lrLabel, {
+      color: cpVisibility.CTLP ? COLORSget("CT") : COLORSget("CV"), fontSize: 9.5, anchor: "end"
+    });
+  }
 
   // marcar Q0 si está dentro de rango
   if (st.Q0 <= QMAXplot) {
     const c0 = E.shortRunCostAtQ(st.formKey, st.Q0, st.Kbar, st.w, st.r, params);
     if (c0) {
       const px = sx(st.Q0);
-      E.el("line", { x1: px, y1: y0, x2: px, y2: y1, stroke: "var(--text-muted)", "stroke-width": 1, "stroke-dasharray": "2,3" }, svg);
-      [["CT", c0.CT, COLORSget("CT")], ["CV", c0.CV, COLORSget("CV")]].forEach(([name, val, color]) => {
+      E.el("line", { x1: px, y1: y0, x2: px, y2: y1, stroke: "var(--text-muted)", "stroke-width": 1, "stroke-dasharray": "2,3" }, layer);
+      const markers = [];
+      if (cpVisibility.CT) markers.push([c0.CT, COLORSget("CT")]);
+      if (cpVisibility.CV) markers.push([c0.CV, COLORSget("CV")]);
+      markers.forEach(([val, color]) => {
         const py = sy(val);
-        E.el("circle", { cx: px, cy: py, r: 3.2, fill: color }, svg);
+        E.el("circle", { cx: px, cy: py, r: 3.2, fill: color }, layer);
       });
-      E.drawLabelWithHalo(svg, px + 4, y0 - 4, "Q₀", { fontSize: 10, color: "var(--text-muted)" });
+      E.drawLabelWithHalo(layer, px + 4, y0 - 4, "Q₀", { fontSize: 10, color: "var(--text-muted)" });
     }
   }
+
+  // Zoom / pan (modo "series": el usuario controla X, el eje Y siempre se
+  // recalcula automáticamente en el bloque anterior). El callback de cambio
+  // dispara un re-render del panel, que recalcula ejes, grilla y curvas.
+  window.CostosZoom.initZoomPanX(svg, "CP", [0, QMAXplot], renderCPPanel);
+  const wrapEl = svg.closest(".svg-wrap");
+  if (wrapEl) window.CostosZoom.attachZoomControls(wrapEl, svg, "CP", "series", [0, QMAXplot], renderCPPanel);
 
   // valores
   const valuesBox = document.getElementById("valuesCP");
   E.clear(valuesBox);
   const c0 = (st.Q0 <= QMAXplot) ? E.shortRunCostAtQ(st.formKey, st.Q0, st.Kbar, st.w, st.r, params) : null;
+  const lr0 = (st.Q0 <= QMAXplot) ? E.longRunCost(st.formKey, st.Q0, st.w, st.r, params) : null;
   const rows = [
-    ["CF", CF.toFixed(2)],
+    ["CF", (st.r * st.Kbar).toFixed(2)],
     ["CV(Q₀)", c0 ? c0.CV.toFixed(2) : "—"],
     ["CT(Q₀)", c0 ? c0.CT.toFixed(2) : "—"],
-    ["L*(Q₀)", c0 ? c0.L.toFixed(2) : "—"]
+    ["L*(Q₀)", c0 ? c0.L.toFixed(2) : "—"],
+    ["CTLP(Q₀)", lr0 ? lr0.CT.toFixed(2) : "—"]
   ];
   rows.forEach(([k, v]) => {
     const box = document.createElement("div");
@@ -1128,7 +1600,39 @@ function clipPolylineToLmax(pts, Lmax) {
   return out;
 }
 
+const ISO_CURVE_DEFS = [
+  { key: "isoquants", label: "Isocuantas", color: "var(--accent)" },
+  { key: "isocostLP", label: "Isocosto LP", color: "var(--accent2)" },
+  { key: "expansionLP", label: "Sendero de expansión LP", color: "var(--accent2)" },
+  { key: "shortRunPath", label: "Sendero e isocosto CP", color: "var(--accent4)" }
+];
+const isoVisibility = { isoquants: true, isocostLP: true, expansionLP: true, shortRunPath: true };
+
+function buildIsoCurveToggles() {
+  const wrap = document.getElementById("curveTogglesIso");
+  if (!wrap || wrap.childElementCount) return; // ya construidos
+  ISO_CURVE_DEFS.forEach(d => {
+    const lbl = document.createElement("label");
+    lbl.className = "curve-toggle";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = isoVisibility[d.key];
+    cb.addEventListener("change", () => {
+      isoVisibility[d.key] = cb.checked;
+      renderIsoPanel();
+    });
+    const sw = document.createElement("span");
+    sw.className = "swatch";
+    sw.style.background = d.color;
+    lbl.appendChild(cb);
+    lbl.appendChild(sw);
+    lbl.appendChild(document.createTextNode(d.label));
+    wrap.appendChild(lbl);
+  });
+}
+
 function renderIsoPanel() {
+  buildIsoCurveToggles();
   const app = window.__CostosApp;
   const st = app.state;
   const svg = document.getElementById("svgIso");
@@ -1149,11 +1653,19 @@ function renderIsoPanel() {
   const Kmax = Math.max(lr.K * 2.2 * topLevelFactor / 1.55, st.Kbar * 1.6, 15);
   const Lmax = Math.max(lr.L * 2.2 * topLevelFactor / 1.55, 15);
 
+  const fullDomain = { xDomain: [0, Lmax], yDomain: [0, Kmax] };
+  const { xDomain, yDomain } = window.CostosZoom.effectiveDomain("Iso", fullDomain);
+
   const { sx, sy } = E.drawAxes(svg, {
     x0, y0, x1, y1,
-    xDomain: [0, Lmax], yDomain: [0, Kmax],
+    xDomain, yDomain,
     xLabel: "L (trabajo)", yLabel: "K (capital)"
   });
+  svg.__pixelBounds = { x0, x1, y0: y1, y1: y0 };
+  // Todo el contenido de datos se dibuja dentro de este grupo recortado al
+  // rectángulo de ejes, para que ninguna isocuanta, isocosto o etiqueta pueda
+  // quedar visualmente fuera del área delimitada por los ejes.
+  const layer = E.createClippedLayer(svg, "clipIso", x0, y0, x1, y1);
   // Proyección a píxeles con K en el eje de ordenadas y L en el de abscisas:
   // toda la geometría del panel se calcula en (K,L) como antes; sólo se invierte
   // el orden de los argumentos al pasar de (K,L) a coordenadas de pantalla.
@@ -1161,6 +1673,7 @@ function renderIsoPanel() {
   const py = (K, L) => sy(K);
 
   // --- Mapa de isocuantas (3 niveles: por debajo, en, y por encima de Q0) ---
+  if (isoVisibility.isoquants) {
   const levels = [st.Q0 * 0.55, st.Q0, st.Q0 * 1.55];
   const levelStyles = [{ op: 0.55, w: 1.3 }, { op: 1, w: 2.2 }, { op: 0.55, w: 1.3 }];
   levels.forEach((Qlev, idx) => {
@@ -1178,13 +1691,13 @@ function renderIsoPanel() {
     E.el("path", {
       d: E.pathFromPoints(svgPts), fill: "none", stroke: "var(--accent)",
       "stroke-width": levelStyles[idx].w, opacity: levelStyles[idx].op
-    }, svg);
+    }, layer);
     // Para Leontief se marca el vértice de la "L" con un punto, ya que es el único
     // punto técnicamente eficiente de la isocuanta y ayuda a leer la forma angular.
     if (isPiecewise && st.formKey === "leontief") {
       const p = params;
       const vK = p.a * Qlev, vL = Math.min(p.b * Qlev, Lmax);
-      E.el("circle", { cx: px(vK, vL), cy: py(vK, vL), r: 2.6, fill: "var(--accent)", opacity: levelStyles[idx].op }, svg);
+      E.el("circle", { cx: px(vK, vL), cy: py(vK, vL), r: 2.6, fill: "var(--accent)", opacity: levelStyles[idx].op }, layer);
     }
     if (idx === 1) {
       const lastPt = svgPts[Math.floor(svgPts.length * 0.82)] || svgPts[svgPts.length - 1];
@@ -1192,29 +1705,33 @@ function renderIsoPanel() {
       // en Leontief, cuyo tramo horizontal se extiende hasta el límite del dominio), se
       // ancla la etiqueta hacia la izquierda para que no quede cortada por el borde del SVG.
       const nearRightEdge = lastPt[0] > x1 - 55;
-      E.drawLabelWithHalo(svg, nearRightEdge ? lastPt[0] - 6 : lastPt[0] + 4, lastPt[1] - 4, `Q₀=${Qlev.toFixed(0)}`, {
+      E.drawLabelWithHalo(layer, nearRightEdge ? lastPt[0] - 6 : lastPt[0] + 4, lastPt[1] - 4, `Q₀=${Qlev.toFixed(0)}`, {
         fontSize: 9.5, color: "var(--accent)", anchor: nearRightEdge ? "end" : "start"
       });
     }
   });
+  }
 
   // --- Isocosto de largo plazo, tangente en (K*,L*) ---
   // w*L + r*K = C*  =>  L = (C* - r*K)/w
   const Cstar = st.w * lr.L + st.r * lr.K;
   const KatL0 = Cstar / st.r; // K cuando L=0
   const LatK0 = Cstar / st.w; // L cuando K=0
+  if (isoVisibility.isocostLP) {
   const isocostPts = [[0, LatK0], [KatL0, 0]].map(([K, L]) => [px(K, L), py(K, L)]);
   E.el("path", {
     d: E.pathFromPoints(isocostPts), fill: "none", stroke: "var(--accent2)",
     "stroke-width": 2, "stroke-dasharray": "6,3"
-  }, svg);
+  }, layer);
+  }
 
   // punto óptimo de largo plazo
   const optPx = [px(lr.K, lr.L), py(lr.K, lr.L)];
-  E.el("circle", { cx: optPx[0], cy: optPx[1], r: 4.5, fill: "var(--accent2)", stroke: "var(--panel-bg)", "stroke-width": 1.5 }, svg);
-  E.drawLabelWithHalo(svg, optPx[0] + 7, optPx[1] - 7, "E* (LP)", { color: "var(--accent2)", fontSize: 10.5 });
+  E.el("circle", { cx: optPx[0], cy: optPx[1], r: 4.5, fill: "var(--accent2)", stroke: "var(--panel-bg)", "stroke-width": 1.5 }, layer);
+  E.drawLabelWithHalo(layer, optPx[0] + 7, optPx[1] - 7, "E* (LP)", { color: "var(--accent2)", fontSize: 10.5 });
 
   // --- Sendero de expansión de largo plazo: unir orígenes de E*(Q) para varios Q ---
+  if (isoVisibility.expansionLP) {
   const expansionPts = [];
   for (let i = 1; i <= 20; i++) {
     const Qi = (i / 20) * (st.Q0 * 1.7);
@@ -1225,35 +1742,43 @@ function renderIsoPanel() {
     E.el("path", {
       d: E.pathFromPoints(expansionPts), fill: "none", stroke: "var(--accent2)",
       "stroke-width": 1.4, opacity: 0.55
-    }, svg);
+    }, layer);
+  }
   }
 
   // --- Sendero de corto plazo: K fijo en Kbar, variando L ---
   // recta horizontal en K=Kbar (ahora en el eje de ordenadas), marcando el punto
   // donde Q(Kbar,L)=Q0
-  if (st.Kbar <= Kmax) {
+  if (isoVisibility.shortRunPath && st.Kbar <= Kmax) {
     const pyK = py(st.Kbar, 0);
-    E.el("line", { x1: x0, y1: pyK, x2: x1, y2: pyK, stroke: "var(--accent4)", "stroke-width": 1.6, "stroke-dasharray": "3,3" }, svg);
+    E.el("line", { x1: x0, y1: pyK, x2: x1, y2: pyK, stroke: "var(--accent4)", "stroke-width": 1.6, "stroke-dasharray": "3,3" }, layer);
     const Lsr = f.Lstar_from_KQ(st.Kbar, st.Q0, params);
     if (!isNaN(Lsr) && Lsr >= 0 && Lsr <= Lmax * 1.2) {
       const srPx = [px(st.Kbar, Lsr), py(st.Kbar, Lsr)];
-      E.el("circle", { cx: srPx[0], cy: srPx[1], r: 4.5, fill: "var(--accent4)", stroke: "var(--panel-bg)", "stroke-width": 1.5 }, svg);
-      E.drawLabelWithHalo(svg, srPx[0] + 7, srPx[1] + 12, "A (CP)", { color: "var(--accent4)", fontSize: 10.5 });
+      E.el("circle", { cx: srPx[0], cy: srPx[1], r: 4.5, fill: "var(--accent4)", stroke: "var(--panel-bg)", "stroke-width": 1.5 }, layer);
+      E.drawLabelWithHalo(layer, srPx[0] + 7, srPx[1] + 12, "A (CP)", { color: "var(--accent4)", fontSize: 10.5 });
       // isocosto de corto plazo por A (referencia, más tenue)
       const CshortA = st.w * Lsr + st.r * st.Kbar;
       const KatL0b = CshortA / st.r, LatK0b = CshortA / st.w;
       const scPts = [[0, LatK0b], [KatL0b, 0]].map(([K, L]) => [px(K, L), py(K, L)]);
-      E.el("path", { d: E.pathFromPoints(scPts), fill: "none", stroke: "var(--accent4)", "stroke-width": 1.3, "stroke-dasharray": "2,3", opacity: 0.6 }, svg);
+      E.el("path", { d: E.pathFromPoints(scPts), fill: "none", stroke: "var(--accent4)", "stroke-width": 1.3, "stroke-dasharray": "2,3", opacity: 0.6 }, layer);
     } else {
-      E.drawLabelWithHalo(svg, x0 + 6, pyK - 6, "K̄ no alcanza Q₀", { fontSize: 9.5, color: "var(--accent4)" });
+      E.drawLabelWithHalo(layer, x0 + 6, pyK - 6, "K̄ no alcanza Q₀", { fontSize: 9.5, color: "var(--accent4)" });
     }
   }
 
   // etiqueta isocosto LP
-  {
+  if (isoVisibility.isocostLP) {
     const labelK = KatL0 * 0.35, labelL = LatK0 * 0.65;
-    E.drawLabelWithHalo(svg, px(labelK, labelL), py(labelK, labelL) - 4, "isocosto LP", { fontSize: 9.5, color: "var(--accent2)" });
+    E.drawLabelWithHalo(layer, px(labelK, labelL), py(labelK, labelL) - 4, "isocosto LP", { fontSize: 9.5, color: "var(--accent2)" });
   }
+
+  // Zoom / pan (modo "plane": este panel representa el plano (K,L), no una
+  // serie Y=f(X), por lo que ambos ejes se escalan juntos con el mismo factor
+  // para preservar ángulos y pendientes de isocuantas e isocostos).
+  window.CostosZoom.initZoomPanPlane(svg, "Iso", fullDomain, renderIsoPanel);
+  const wrapEl = svg.closest(".svg-wrap");
+  if (wrapEl) window.CostosZoom.attachZoomControls(wrapEl, svg, "Iso", "plane", fullDomain, renderIsoPanel);
 
   // valores
   const valuesBox = document.getElementById("valuesIso");
@@ -1340,15 +1865,20 @@ function renderEnvelopePanel() {
   let lrData = null;
   if (st.showEnvelope) lrData = computeLREnvelope(st.formKey, st.w, st.r, params, QMAX);
 
-  // Rango Y: se ignora el tramo inicial Q < QMAX*0.08, donde CFMe y CMe divergen
-  // asintóticamente a infinito (Q→0) — ese tramo no aporta información de escala útil
-  // y, de incluirse, aplastaría el resto de las curvas contra el eje horizontal.
+  // El eje X queda sujeto al zoom del usuario; el eje Y SIEMPRE se recalcula
+  // de forma automática a partir de los valores reales de las curvas visibles
+  // dentro del rango X activo, igual que en el panel de corto plazo.
+  // Dentro de ese rango visible se sigue ignorando el primer 8% (borde
+  // izquierdo), donde CFMe y CMe divergen asintóticamente a infinito cuando
+  // Q→0 queda dentro de la vista — ese tramo no aporta información de escala
+  // útil y, de incluirse, aplastaría el resto de las curvas contra el eje.
+  const xDomain = window.CostosZoom.effectiveXDomain("Envelope", [0, QMAX]);
+  const QSKIP = xDomain[0] + (xDomain[1] - xDomain[0]) * 0.08;
   let yMax = 1;
-  const QSKIP = QMAX * 0.08;
   const activeKeys = Object.keys(st.curveVisibility).filter(k => st.curveVisibility[k]);
   allSets.forEach(set => {
     set.data.forEach(row => {
-      if (row.Q < QSKIP) return;
+      if (row.Q < xDomain[0] || row.Q > xDomain[1] || row.Q < QSKIP) return;
       activeKeys.forEach(k => {
         const v = row[k];
         if (v != null && isFinite(v)) yMax = Math.max(yMax, v);
@@ -1356,18 +1886,27 @@ function renderEnvelopePanel() {
     });
   });
   if (lrData) lrData.forEach(row => {
-    if (row.Q < QSKIP) return;
+    if (row.Q < xDomain[0] || row.Q > xDomain[1] || row.Q < QSKIP) return;
     if (st.curveVisibility.CMe && isFinite(row.CMeLR)) yMax = Math.max(yMax, row.CMeLR);
     if (st.curveVisibility.CMg && isFinite(row.CMgLR)) yMax = Math.max(yMax, row.CMgLR);
   });
   yMax *= 1.12;
+  const yDomain = [0, yMax];
 
   const { sx, sy } = E.drawAxes(svg, {
     x0, y0, x1, y1,
-    xDomain: [0, QMAX], yDomain: [0, yMax],
+    xDomain, yDomain,
     xLabel: "Q (cantidad producida)", yLabel: "Costo por unidad ($)",
     xTicks: 7, yTicks: 6
   });
+  svg.__pixelBounds = { x0, x1, y0: y1, y1: y0 };
+  // Todo el contenido de datos se dibuja dentro de este grupo recortado al
+  // rectángulo de ejes, para que ninguna curva ni etiqueta pueda quedar
+  // visualmente fuera del área delimitada por los ejes.
+  const layer = E.createClippedLayer(svg, "clipEnvelope", x0, y0, x1, y1);
+  // Margen de seguridad para que las etiquetas de curvas nunca queden
+  // pegadas o cortadas contra el borde superior/inferior del panel.
+  const clampY = (py) => Math.max(y1 + 11, Math.min(y0 - 3, py));
 
   function drawSeries(data, key, color, width, dash, opacity) {
     const pts = data.filter(r => r[key] != null && isFinite(r[key])).map(r => [sx(r.Q), sy(Math.min(r[key], yMax))]);
@@ -1375,7 +1914,7 @@ function renderEnvelopePanel() {
     const attrs = { d: E.pathFromPoints(pts), fill: "none", stroke: color, "stroke-width": width };
     if (dash) attrs["stroke-dasharray"] = dash;
     if (opacity !== undefined) attrs.opacity = opacity;
-    E.el("path", attrs, svg);
+    E.el("path", attrs, layer);
     return pts[pts.length - 1];
   }
 
@@ -1396,7 +1935,7 @@ function renderEnvelopePanel() {
       const color = set.live ? baseColors[sd.key] : set.color;
       const lastPt = drawSeries(set.data, sd.key, color, (sd.key === "CMg" ? 2 : 1.7) + widthBoost * 0, sd.dash, set.live ? 1 : 0.8);
       if (lastPt && set.live) {
-        E.drawLabelWithHalo(svg, lastPt[0] - 26, lastPt[1] - 6, sd.key, { fontSize: 9.5, color });
+        E.drawLabelWithHalo(layer, lastPt[0] - 26, clampY(lastPt[1] - 6), sd.key, { fontSize: 9.5, color });
       }
     });
     // La identificación de cada curva capturada (K̄=…) se muestra en el chip de
@@ -1409,22 +1948,27 @@ function renderEnvelopePanel() {
   if (lrData) {
     if (st.curveVisibility.CMe) {
       const pts = lrData.filter(r => isFinite(r.CMeLR)).map(r => [sx(r.Q), sy(Math.min(r.CMeLR, yMax))]);
-      E.el("path", { d: E.pathFromPoints(pts), fill: "none", stroke: "var(--accent2)", "stroke-width": 3 }, svg);
+      E.el("path", { d: E.pathFromPoints(pts), fill: "none", stroke: "var(--accent2)", "stroke-width": 3 }, layer);
       const lp = pts[pts.length - 1];
-      E.drawLabelWithHalo(svg, lp[0] - 8, lp[1] - 10, "CMeLP", { fontSize: 10.5, color: "var(--accent2)", weight: 700, anchor: "end" });
+      E.drawLabelWithHalo(layer, lp[0] - 8, clampY(lp[1] - 10), "CMeLP", { fontSize: 10.5, color: "var(--accent2)", weight: 700, anchor: "end" });
     }
     if (st.curveVisibility.CMg) {
       const pts = lrData.filter(r => isFinite(r.CMgLR)).map(r => [sx(r.Q), sy(Math.min(r.CMgLR, yMax))]);
-      E.el("path", { d: E.pathFromPoints(pts), fill: "none", stroke: "var(--accent2)", "stroke-width": 2, "stroke-dasharray": "1,4" }, svg);
+      E.el("path", { d: E.pathFromPoints(pts), fill: "none", stroke: "var(--accent2)", "stroke-width": 2, "stroke-dasharray": "1,4" }, layer);
       const lp = pts[pts.length - 1];
-      E.drawLabelWithHalo(svg, lp[0] - 8, lp[1] + 14, "CMgLP", { fontSize: 9.5, color: "var(--accent2)", anchor: "end" });
+      E.drawLabelWithHalo(layer, lp[0] - 8, clampY(lp[1] + 14), "CMgLP", { fontSize: 9.5, color: "var(--accent2)", anchor: "end" });
     }
   }
 
   // línea vertical en Q0
   if (st.Q0 <= QMAX) {
-    E.el("line", { x1: sx(st.Q0), y1: y0, x2: sx(st.Q0), y2: y1, stroke: "var(--text-muted)", "stroke-width": 1, "stroke-dasharray": "2,3" }, svg);
+    E.el("line", { x1: sx(st.Q0), y1: y0, x2: sx(st.Q0), y2: y1, stroke: "var(--text-muted)", "stroke-width": 1, "stroke-dasharray": "2,3" }, layer);
   }
+
+  // Zoom / pan (modo "series": el eje Y se recalcula automáticamente arriba)
+  window.CostosZoom.initZoomPanX(svg, "Envelope", [0, QMAX], renderEnvelopePanel);
+  const wrapEl = svg.closest(".svg-wrap");
+  if (wrapEl) window.CostosZoom.attachZoomControls(wrapEl, svg, "Envelope", "series", [0, QMAX], renderEnvelopePanel);
 
   // valores del set en vivo en Q0
   const valuesBox = document.getElementById("valuesEnvelope");
